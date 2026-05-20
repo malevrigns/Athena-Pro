@@ -1,194 +1,179 @@
-# Athena Pro · 单用户深度研究助手 (v5)
+<div align="center">
 
-一个**真正可部署、可在线使用**的多 Agent 深度研究产品。
-后端 FastAPI + 持久化 SQLite + 迭代式 supervisor 流水线,
-前端 Vue 3 + Naive UI + Vue Flow + 流式 Markdown,
-一键 `docker compose up` 即可在浏览器使用。
+# 🦉 Athena Pro
 
-> 与上一代相比:从教学 demo 升级为单用户生产级产品。
-> 真实 LLM 接入(OpenAI / Anthropic / DeepSeek / OpenRouter)、真实搜索(Tavily)、
-> 报告导出 PDF/DOCX/MD、API Key 鉴权、SQLite 持久化、SSE 流式、UI 工作台。
+### 企业级多 Agent 深度研究助手
 
----
+*把一个问题,变成一份带引用、可追溯、可下载的研究报告*
 
-## 主要特性
+<br/>
 
-- **多 Agent 流水线**: Planner → Plan Review → Supervisor → Researcher (并发) → Quality Gate → Reviewer → Writer。质量不达标自动追加调研轮次。
-- **真实 LLM 路由**: 通过 `ATHENA_LLM_PROVIDER` 切换 `mock / openai / anthropic / deepseek / openrouter`,各节点可独立指定模型。
-- **真实搜索**: Tavily(密钥配置后自动启用),带重试与 30 分钟缓存。
-- **流式响应**: SSE 实时推送,前端 Markdown 渐进渲染,断点重连。
-- **持久化**: 任务、状态、事件、token 用量全部入 SQLite (WAL 模式)。重启进程后历史依然可见,未完成任务自动标记失败。
-- **报告导出**: Markdown / HTML / PDF (WeasyPrint) / DOCX (pandoc),一键下载,引用 footnote 完整保留。
-- **API 安全**: 单用户 Bearer Token,带 IP 维度滑动窗口限流。SSE 接受 `?api_key=` 注入(浏览器 EventSource 限制)。
-- **企业级 UI**: Vue Flow 工作流画布(支持暗黑模式),Quality Gate 雷达,Token/Cost 拆解,Finding 折叠卡,引用追溯。
-- **健康/配置 API**: `/health`, `/v1/config` 暴露状态,前端 Settings 页面可一键测试连接。
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688?style=flat-square&logo=fastapi&logoColor=white)
+![Vue](https://img.shields.io/badge/Vue-3.5-4FC08D?style=flat-square&logo=vuedotjs&logoColor=white)
+![Element Plus](https://img.shields.io/badge/Element_Plus-2.8-409EFF?style=flat-square&logo=element&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)
+![Status](https://img.shields.io/badge/状态-生产可用-22c55e?style=flat-square)
+
+<br/>
+
+**多 Agent 流水线** · **真实 LLM (Gemma / OpenAI / Claude)** · **真实联网搜索** · **引用可验证** · **成本治理** · **一键部署**
+
+</div>
 
 ---
 
-## 一键启动 (Docker)
+## 💡 为什么做这个项目
+
+学 AI Agent 的教程很多,但几乎都停在 **demo 级**:拉个框架、调个 API、跑通一个 "Hello World" 就结束了。
+
+可一旦要在企业里**真落地**,你会发现没人教这些:
+
+| 教程不教的 | Athena Pro 怎么做 |
+|---|---|
+| ❌ 任务跑一半进程挂了,数据全丢 | ✅ SQLite 持久化 + 重启自动恢复 |
+| ❌ 烧了多少 token、每个节点多少钱,一笔糊涂账 | ✅ Token 级成本看板,精确到 agent 节点 |
+| ❌ 报告里的引用是真的吗?能核验吗 | ✅ 引用逐条人工验证(通过 / 驳回 / 复核) |
+| ❌ 研究计划要不要人审一道 | ✅ Plan Review 人审环节,可改可驳回 |
+| ❌ 怎么部署上线 | ✅ `docker compose up` 一键起 |
+
+> **Athena Pro 把"教程不教的企业级部分"完整实现了一遍。** 从 *能跑* 到 *能用*。
+
+---
+
+## 🎬 一分钟了解
+
+```
+输入一个研究问题
+      │
+      ▼
+ Planner 拆题  →  Researcher 并发检索  →  Quality Gate 评分
+      │                                        │
+      │              ┌── 不达标 ──  Reviewer 补充调研 ◄┘
+      ▼              ▼
+ Writer 撰写  →  带 [n] 引用的 Markdown 报告  →  导出 PDF / DOCX / MD
+```
+
+---
+
+## ✨ 核心能力
+
+### 🤖 多 Agent 迭代流水线
+`Planner → Plan Review → Supervisor → Researcher(并发) → Quality Gate → Reviewer → Writer`
+质量不达标时,Supervisor 自动追加调研轮次,而不是直接交一份半成品。
+
+### 🧠 真实 LLM,不是 Mock
+- 自托管 **Gemma**(vLLM,数据不出网)/ **OpenAI** / **Anthropic** / **DeepSeek** / **OpenRouter**
+- 各节点可独立指定模型(planner 用强模型,researcher 用快模型)
+
+### 🔍 真实联网搜索
+- **DuckDuckGo**(零配置,开箱即用)/ **Tavily**(配 key 自动启用)
+- 带重试、缓存、多引擎兜底 —— 报告里的每个 URL 都真实可访问
+
+### 📊 9 个企业级页面
+研究工作台 · 计划审查 · 引用验证 · 报告与引用 · 知识库 · 成本看板 · 运行历史 · 用量仪表盘 · 系统设置
+
+### 🛡️ 生产级基建
+SQLite 持久化 · SSE 流式 · API Key 鉴权 · 限流 · 重启恢复 · 健康检查
+
+---
+
+## 🏗️ 架构
+
+```mermaid
+flowchart LR
+    UI["Vue 3 + Element Plus<br/>9 个页面"] -->|Bearer Token| API
+    UI <-.->|SSE 流式| API
+    API["FastAPI<br/>CORS · RateLimit · Auth"] --> RT[runtime_store]
+    RT --> GRAPH["graph: 迭代式 supervisor"]
+    GRAPH --> P[Planner] --> RV[Plan Review] --> RS["Researcher × N"]
+    RS --> QG[Quality Gate] --> RVW[Reviewer] --> WR[Writer]
+    RS -.->|tool| SEARCH["DuckDuckGo / Tavily"]
+    P & RS & RVW & WR -.->|LLM| LLM["Gemma / OpenAI / Claude"]
+    GRAPH --> BUS[event_bus] --> DB[("SQLite<br/>WAL")]
+```
+
+---
+
+## 🚀 快速开始
+
+### 方式一:Docker(推荐)
 
 ```bash
-git clone <repo> athena-pro && cd athena-pro
-cp .env.example .env
-
-# 必改: 生成一个长随机 API key
-python -c "import secrets;print('ATHENA_API_KEY='+secrets.token_urlsafe(40))" >> .env
-
-# (可选) 接入真实模型 / 搜索
-# ATHENA_LLM_PROVIDER=openai
-# ATHENA_OPENAI_API_KEY=sk-...
-# ATHENA_DEFAULT_MODEL=gpt-4o-mini
-# ATHENA_SEARCH_PROVIDER=tavily
-# ATHENA_TAVILY_API_KEY=tvly-...
-
+git clone https://github.com/malevrigns/Athena-Pro.git
+cd Athena-Pro
+cp .env.example .env          # 按需填写 LLM / 搜索配置
 docker compose up -d --build
 ```
 
-打开 <http://localhost:5173>:
+打开 **http://localhost:5173** 即可使用。
 
-1. 进入 **系统设置**,粘贴 `ATHENA_API_KEY`,保存。
-2. 点 **测试连接** 应该看到 `API 正常`。
-3. 回到 **研究工作台**,输入问题(或点 preset),开始研究。
-4. 等流水线跑完,在右上角下载 PDF / DOCX / MD。
-
-数据持久化在 named volume `athena-data`(挂载到容器 `/data`),包含 SQLite 和导出文件。
-
----
-
-## 本地开发
-
-### 后端
+### 方式二:本地开发
 
 ```bash
+# ---- 后端 ----
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[all]"
-cp .env.example .env  # 然后填入 keys 或保持 mock
+cp .env.example .env
 python -m uvicorn athena.api.main:app --reload --port 8000
-```
 
-可选额外功能:
-- `pip install ".[llm]"` — OpenAI / Anthropic SDK
-- `pip install ".[search]"` — Tavily SDK
-- `pip install ".[export]"` — WeasyPrint + pypandoc
-  - PDF 需要系统库:`apt install libpango-1.0-0 libcairo2 fonts-noto-cjk`
-  - DOCX 需要 `pandoc` 可执行文件
-
-### 前端
-
-```bash
+# ---- 前端 ----
 cd web
 npm install
-VITE_API_PROXY=http://localhost:8000 npm run dev
+npm run dev
 ```
 
-打开 <http://localhost:5173>(开发模式 Vite 代理到 8000)。
+> 不配置任何 API key 时,默认走 mock LLM + mock 搜索,开箱即可演示。
 
-### 测试
+---
+
+## ⚙️ 配置(`.env`)
 
 ```bash
-source .venv/bin/activate
-python -m pytest tests -q       # 后端
-cd web && npx vue-tsc --noEmit  # 前端类型检查
+# LLM:mock | openai | anthropic | deepseek | gemma
+ATHENA_LLM_PROVIDER=gemma
+ATHENA_DEFAULT_MODEL=gemma-4-31B-it
+ATHENA_GEMMA_BASE_URL=http://your-vllm-host:8000/v1
+ATHENA_GEMMA_API_KEY=EMPTY
+
+# 搜索:mock | duckduckgo | tavily
+ATHENA_SEARCH_PROVIDER=duckduckgo
+
+# 鉴权
+ATHENA_REQUIRE_AUTH=true
+ATHENA_API_KEY=换成一个长随机串
 ```
 
----
-
-## 环境变量速查
-
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `ATHENA_API_KEY` | (空) | Bearer Token,**生产必须**设置 |
-| `ATHENA_REQUIRE_AUTH` | `true` | 关掉只在内网/本机调试时用 |
-| `ATHENA_LLM_PROVIDER` | `mock` | `mock / openai / anthropic / deepseek / openrouter` |
-| `ATHENA_DEFAULT_MODEL` | `mock-researcher` | 默认模型名 |
-| `ATHENA_PLANNER_MODEL` / `_RESEARCHER_MODEL` / `_WRITER_MODEL` | (空) | 各节点单独覆盖 |
-| `ATHENA_OPENAI_API_KEY` 等 | (空) | 对应 provider 的 key |
-| `ATHENA_SEARCH_PROVIDER` | `mock` | `mock / tavily`,有 key 自动启用 tavily |
-| `ATHENA_MAX_RESEARCH_ITERATIONS` | `2` | quality 不达标的重做轮次 |
-| `ATHENA_QUALITY_THRESHOLD` | `0.7` | 达到该值停止 reviewer 回环 |
-| `ATHENA_MAX_BUDGET_USD` | `5` | 软上限提醒 |
-| `ATHENA_HARD_TIMEOUT_SEC` | `600` | 任务最长执行时长 |
-| `ATHENA_RATE_LIMIT_PER_MINUTE` | `30` | 同 IP 同 path 的限流 |
-| `ATHENA_DATA_DIR` | `.athena-data` | SQLite/exports 根目录 |
-| `ATHENA_ALLOWED_ORIGINS` | `["http://localhost:5173"]` | CORS 白名单 |
+完整变量见 [`.env.example`](.env.example)。
 
 ---
 
-## API 端点
+## 🧱 技术栈
 
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/health` | 健康检查(对外开放) |
-| GET | `/v1/config` | 服务端配置快照(对外开放) |
-| POST | `/v1/research` | 创建任务 |
-| GET | `/v1/research` | 任务列表(从 SQLite 拉) |
-| GET | `/v1/research/{id}` | 任务快照 |
-| GET | `/v1/research/{id}/events` | 历史事件 |
-| GET | `/v1/research/{id}/stream` | SSE 流(支持 `?api_key=`) |
-| POST | `/v1/research/{id}/interrupt` | 软中断 |
-| POST | `/v1/research/{id}/review` | 提交人工审阅 |
-| POST | `/v1/research/{id}/export?fmt=md\|html\|pdf\|docx` | 导出报告 |
-| GET | `/v1/research/{id}/download?filename=...` | 下载导出文件 |
-| POST | `/v1/feedback` | 提交评分 / 评论 |
-
-所有 `/v1/` 端点都要求 `Authorization: Bearer <ATHENA_API_KEY>`(`/v1/config` 除外)。
+| 层 | 技术 |
+|---|---|
+| 后端 | FastAPI · SQLite(WAL)· httpx · SSE · structlog |
+| Agent | 迭代式 supervisor 流水线 · LLM 路由 · 搜索 tool |
+| 前端 | Vue 3 · Element Plus · Vue Flow · ECharts · anime.js · markdown-it |
+| 部署 | Docker Compose · Nginx |
 
 ---
 
-## 架构图
+## 🗺️ 路线图
 
-```
-浏览器 (Vue3 + Naive + VueFlow + ofetch)
-    │  Bearer Token
-    │  SSE  ← /v1/research/{id}/stream
-    ▼
-FastAPI ── 中间件: CORS, RateLimit, Auth
-    │
-    ├─ runtime_store (in-memory)  ◀──┐
-    │      │                          │
-    │      │ async task                │
-    │      ▼                          │
-    │  graph/main_graph (iterative supervisor)
-    │      │
-    │      ├─ planner_node           │
-    │      ├─ plan_review_node       │
-    │      ├─ supervisor_node        │ ← 内部循环
-    │      ├─ researcher_node (并发) │
-    │      ├─ quality_gate_node      │
-    │      ├─ reviewer_node          │
-    │      └─ writer_node            │
-    │      │                          │
-    │      ▼                          │
-    │   event_bus → persistence ─────┘
-    │                                  
-    └─ persistence/sqlite_store (WAL + 自动 schema)
-                ▲
-                │
-            /data/athena.sqlite3
-            /data/exports/*.{md,html,pdf,docx}
-```
+- [x] 多 Agent 迭代流水线 + 真实 LLM / 搜索
+- [x] 引用验证 · 成本看板 · 知识库 CRUD
+- [x] 报告导出 PDF / DOCX / Markdown
+- [ ] 文件 / 知识库向量检索(pgvector / Qdrant)
+- [ ] 多用户与 RBAC
+- [ ] MCP 工具市场接入
 
 ---
 
-## 安全注意
+<div align="center">
 
-- **总是**在生产设置 `ATHENA_API_KEY`,并通过 HTTPS 终止(nginx/caddy/cloudflare)。
-- 前端的 API Key 保存在 `localStorage`,只在你信任的浏览器使用。
-- `dompurify` 严格清洗渲染的 Markdown HTML,但仍不建议把不可信用户输入直接喂进任务问题。
-- 速率限制只是基础防御,公网部署建议在反代层加 fail2ban 或 cloudflare turnstile。
+**Athena Pro** —— 教学型项目,但每一处都按生产标准实现。
 
----
+⭐ 如果它帮你理解了"企业级 Agent 该怎么做",欢迎 Star
 
-## 路线图(已脱离 V1)
-
-- ✅ 真实 LLM / 搜索 / 流式 / 导出
-- ✅ SQLite 持久化 + 重启恢复
-- ✅ Vue Flow 工作流可视化 + 流式 Markdown + 暗黑模式
-- ✅ Docker Compose 一键部署
-- ⏳ 文件 / 知识库上传 (RAG, pgvector)
-- ⏳ 多用户与 RBAC (当前是单用户)
-- ⏳ MCP 工具市场接入
-
-```text
-版本 5.0.0 · 真正能用 · 单用户生产可投
-```
+</div>
