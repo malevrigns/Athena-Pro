@@ -7,6 +7,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AgentCommandCenter: typeof import('./src/components/workbench/AgentCommandCenter.vue')['default']
     AppShell: typeof import('./src/components/layout/AppShell.vue')['default']
     CitationPopover: typeof import('./src/components/report/CitationPopover.vue')['default']
     CitationsPanel: typeof import('./src/components/report/CitationsPanel.vue')['default']

@@ -8,6 +8,7 @@ import {
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import { ElMessage } from 'element-plus'
+import AgentCommandCenter from '@/components/workbench/AgentCommandCenter.vue'
 import { useTaskStore } from '@/stores/task'
 import { useSessionStore } from '@/stores/session'
 import { useEntrance } from '@/composables/useAnime'
@@ -25,7 +26,10 @@ const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 onMounted(() => {
   if (props.id) task.load(props.id)
 })
-watch(() => props.id, (id) => { if (id) task.load(id) })
+watch(() => props.id, (id) => {
+  if (!id) return
+  task.load(id)
+})
 onBeforeUnmount(() => task.closeStream())
 
 const steps = [
@@ -288,6 +292,11 @@ function agentBgColor(color: string) {
         <div v-if="i < steps.length - 1" class="wb-step-line" :class="{ done: stepState(i + 1) !== 'todo' || stepState(i) === 'done' }" />
       </div>
     </section>
+
+    <AgentCommandCenter
+      :task-id="task.current?.id || props.id || ''"
+      :refresh-key="`${task.status}:${task.events.length}`"
+    />
 
     <!-- ============= 4-col grid ============= -->
     <section class="wb-grid">

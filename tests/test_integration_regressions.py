@@ -350,3 +350,50 @@ async def _assert_researcher_includes_matching_knowledge_items():
         assert "ACME_KNOWLEDGE_SENTINEL" in "\n".join(finding.evidence)
     finally:
         await store.close()
+
+
+@pytest.mark.asyncio
+async def test_agent_trace_endpoint_exposes_knowledge_backed_researchers(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    _configure_env(monkeypatch, tmp_path)
+
+    from athena.api.main import create_app
+    from athena.persistence import get_store
+    from athena.schemas import Finding, QualityScore, ResearchPlan, ResearchTopic, Source, TaskStatus, TokenUsage
+    from athena.state import ResearchState
+
+    app = create_app()
+    async with app.router.lifespan_context(app):
+        topic = ResearchTopic(id="topic_rag", title="RAG 成本控制", question="如何控制 RAG 成本?")
+        state = ResearchState(task_id="task_agent_trace", question="验证 agent trace", status=TaskStatus.DONE)
+        state.plan = ResearchPlan(question=state.question, topics=[topic])
+        state.add_finding(
+            Finding(
+                topic_id=topic.id,
+                title="知识库命中缓存优先策略",
+                summary="内部知识库指出应先查缓存和租户预算。",
+                sources=[
+                    Source(title="内部成本手册", url="internal://cost", source_type="internal"),
+                    Source(title="外部报告", url="https://example.invalid/report", source_type="web"),
+                ],
+            )
+        )
+        state.quality = QualityScore(overall=0.91, factuality=0.9, coverage=0.9, citation_integrity=0.94)
+        state.add_usage(TokenUsage(model="mock-model", node="researcher", input_tokens=10, output_tokens=20, cost_usd=0.01))
+        await get_store().upsert_task(state)
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/v1/research/task_agent_trace/agents")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["knowledge_hits"] == 1
+    assert payload["summary"]["total_agents"] >= 5
+    by_id = {item["id"]: item for item in payload["items"]}
+    assert by_id["planner"]["status"] == "done"
+    assert by_id["researcher:topic_rag"]["knowledge_hits"] == 1
+    assert by_id["researcher:topic_rag"]["source_count"] == 2
+    assert "知识库命中" in by_id["researcher:topic_rag"]["output_summary"]

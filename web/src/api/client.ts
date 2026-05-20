@@ -55,7 +55,7 @@ const baseFetch = ofetch.create({
   },
 })
 
-async function apiFetch<T>(path: string, opts: FetchOptions = {}): Promise<T> {
+export async function apiFetch<T>(path: string, opts: FetchOptions = {}): Promise<T> {
   return baseFetch(buildApiUrl(path), opts) as unknown as Promise<T>
 }
 
