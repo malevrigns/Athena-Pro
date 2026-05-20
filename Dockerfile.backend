@@ -1,0 +1,36 @@
+# ---------- builder ----------
+FROM python:3.12-slim AS builder
+WORKDIR /build
+ENV PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1
+RUN apt-get update && apt-get install -y --no-install-recommends gcc build-essential && rm -rf /var/lib/apt/lists/*
+COPY pyproject.toml README.md ./
+COPY src ./src
+RUN pip install --upgrade pip && pip install --prefix=/install ".[all]"
+
+# ---------- runtime ----------
+FROM python:3.12-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+
+# System libs needed by weasyprint (PDF) + pandoc (DOCX)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libpango-1.0-0 libpangoft2-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 \
+      libffi8 shared-mime-info fonts-dejavu fonts-noto-cjk \
+      pandoc curl tini \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /install /usr/local
+COPY pyproject.toml README.md ./
+COPY src ./src
+
+RUN useradd -r -u 1001 athena && mkdir -p /data && chown -R athena:athena /data /app
+USER athena
+ENV ATHENA_DATA_DIR=/data
+VOLUME ["/data"]
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:8000/health || exit 1
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["python", "-m", "uvicorn", "athena.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]

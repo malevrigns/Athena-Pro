@@ -1,0 +1,39 @@
+"""带 error_handler 的图构建"""
+from langgraph.types import Command
+
+
+def researcher_error_handler(state, error: Exception) -> Command:
+    """Researcher 节点抛异常时的恢复策略。"""
+    logger.exception("researcher_failed", topic=state.get("current_topic"))
+    
+    # 把当前 topic 标记为"研究失败",回到 supervisor
+    failed_topic = state.get("current_topic", "?")
+    return Command(
+        goto="supervisor",
+        update={
+            "findings": [{
+                "topic": failed_topic,
+                "summary": f"⚠️ 该方向研究失败:{type(error).__name__}",
+                "sources_full": [],
+                "is_failed": True,
+            }],
+            "messages": [HumanMessage(
+                content=f"⚠️ Researcher 在「{failed_topic}」上失败,跳过继续。",
+                name="researcher",
+            )],
+        }
+    )
+
+
+async def build_main_graph():
+    g = StateGraph(ResearchState)
+    
+    # 关键 agent 都装上 error_handler
+    g.add_node("researcher", researcher_node, on_error=researcher_error_handler)
+    g.add_node("planner", planner_node, on_error=lambda s, e: Command(goto="__end__", update={
+        "final_report": "❌ Planner 失败,无法继续",
+        "abort_reason": f"planner_error: {type(e).__name__}",
+    }))
+    # ... 其他节点
+    
+    return g.compile(checkpointer=await get_checkpointer())

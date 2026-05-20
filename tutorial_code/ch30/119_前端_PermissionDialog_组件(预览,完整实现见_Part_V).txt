@@ -1,0 +1,19 @@
+function PermissionDialog({ request, onDecide }: Props) {
+  return (
+    <Dialog open>
+      <DialogTitle>Agent 请求执行操作</DialogTitle>
+      <DialogBody>
+        <Badge variant="warning">{request.tool_name}</Badge>
+        <CodeBlock>{JSON.stringify(request.tool_input, null, 2)}</CodeBlock>
+        <Alert variant="info">{request.risk_summary}</Alert>
+      </DialogBody>
+      <DialogFooter>
+        <Button onClick={() => onDecide("deny")} variant="outline">拒绝</Button>
+        <Button onClick={() => onDecide("approve_once")}>允许这一次</Button>
+        <Button onClick={() => onDecide("approve_session")} variant="primary">
+          本会话都允许
+        </Button>
+      </DialogFooter>
+    </Dialog>
+  );
+}

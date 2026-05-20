@@ -1,0 +1,35 @@
+from langchain_anthropic import ChatAnthropic
+from athena.llm.cache import build_cached_system_prompt, estimate_savings
+from athena.observability.cache_metrics import cache_savings
+
+
+def build_llm_with_cache(
+    base_system_prompt: str,
+    skill_content: str = "",
+    memory_content: str = "",
+    node_name: str = "unknown",
+):
+    """
+    返回一个绑定了缓存 system prompt 的 LLM,后续调用自动用缓存。
+    """
+    # 算预期节省(假设 4 次调用)
+    stable_tokens = estimate_token_count(base_system_prompt + skill_content)
+    savings = estimate_savings(stable_tokens, n_calls=4)
+    cache_savings.labels(node=node_name).inc(savings["saved_tokens"])
+    
+    llm = ChatAnthropic(
+        model="claude-3-5-sonnet-20241022",
+        temperature=0.0,
+        max_tokens=4096,
+        # ⚠️ 关键参数:开启 caching beta
+        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+    )
+    
+    cached_system_blocks = build_cached_system_prompt(
+        base_system_prompt,
+        skill_content=skill_content,
+        memory_content=memory_content,
+    )
+    
+    # 注意:LangChain 的 ChatAnthropic 把 system 当 list 处理,正好兼容
+    return llm.bind(system=cached_system_blocks)

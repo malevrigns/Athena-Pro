@@ -1,0 +1,35 @@
+"""
+WebSocket 端点 · 双向通信
+
+客户端 → 服务端 消息类型:
+  - {"type": "subscribe", "task_id": "..."}     # 订阅一个任务
+  - {"type": "interrupt", "task_id": "..."}     # 中途打断
+  - {"type": "approve", "task_id": "...",
+     "decision": {...}}                          # HITL 审批
+
+服务端 → 客户端 消息类型:
+  - {"type": "node_update", "node": "...", ...}
+  - {"type": "token", "content": "..."}
+  - {"type": "interrupt_ack", "task_id": "..."}
+  - {"type": "done", "task_id": "...", ...}
+  - {"type": "error", "error": "..."}
+"""
+from __future__ import annotations
+import asyncio
+import json
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+from athena.api.streaming import _summarize_update
+from athena.observability import logger
+
+router = APIRouter()
+
+
+@router.websocket("/v1/ws")
+async def ws_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    
+    # 每个 WebSocket 连接的本地状态
+    session_tasks: dict[str, asyncio.Event] = {}      # task_id → 取消信号
+    streaming_tasks: dict[str, asyncio.Task] = {}     # task_id → 转发协程

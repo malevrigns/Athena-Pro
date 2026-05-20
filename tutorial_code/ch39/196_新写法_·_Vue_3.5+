@@ -1,0 +1,3 @@
+const bodyRef = useTemplateRef<HTMLElement>('bodyRef')
+// 模板:<article ref="bodyRef">
+// 用:bodyRef.value 类型直接是 HTMLElement | null

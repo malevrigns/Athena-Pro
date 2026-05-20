@@ -1,0 +1,14 @@
+async def build_researcher_tools():
+    from athena.tools.search import web_search
+    from athena.tools.sandbox_tools import python_repl, bash_tool
+    from athena.subagents.tool import delegate_to_subagent
+    from athena.mcp.manager import get_mcp_manager
+    
+    local_tools = [
+        web_search,
+        python_repl,
+        bash_tool,
+        delegate_to_subagent,         # ← 主 Researcher 可以"派子任务"
+    ]
+    mcp = await get_mcp_manager()
+    return local_tools + mcp.get_tools()

@@ -1,0 +1,74 @@
+"""Session 相关的 Postgres 表"""
+from __future__ import annotations
+from datetime import datetime, timezone
+from sqlalchemy import (
+    Column, String, JSON, DateTime, ForeignKey, Float, Integer, Index
+)
+from sqlalchemy.orm import declarative_base, relationship
+
+Base = declarative_base()
+
+
+class Session(Base):
+    """用户会话 · 用户级隔离单元"""
+    __tablename__ = "sessions"
+    
+    session_id = Column(String(64), primary_key=True)
+    user_id = Column(String(64), nullable=False, index=True)
+    
+    # 用户在这个 session 里做的所有偏好决策(permission, model, language ...)
+    preferences = Column(JSON, default=dict)
+    
+    # session 累计成本
+    total_cost_usd = Column(Float, default=0.0)
+    
+    # 元数据
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_active_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                            onupdate=lambda: datetime.now(timezone.utc))
+    ended_at = Column(DateTime, nullable=True)
+    
+    tasks = relationship("Task", back_populates="session", lazy="dynamic")
+    
+    __table_args__ = (
+        Index("ix_sessions_user_active", "user_id", "last_active_at"),
+    )
+
+
+class Task(Base):
+    """一次研究任务"""
+    __tablename__ = "tasks"
+    
+    task_id = Column(String(64), primary_key=True)           # = LangGraph thread_id
+    session_id = Column(String(64), ForeignKey("sessions.session_id"),
+                        nullable=False, index=True)
+    
+    question = Column(String, nullable=False)
+    status = Column(String(32), default="pending")           # pending|running|done|aborted|failed
+    
+    # 任务级 metadata(报告位置、统计数据)
+    metadata_json = Column(JSON, default=dict)
+    
+    cost_usd = Column(Float, default=0.0)
+    duration_sec = Column(Float, nullable=True)
+    
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    completed_at = Column(DateTime, nullable=True)
+    
+    session = relationship("Session", back_populates="tasks")
+
+
+class PermissionDecision(Base):
+    """ch30 的 Permission Engine 决策记录(session 内记忆用)"""
+    __tablename__ = "permission_decisions"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String(64), index=True, nullable=False)
+    
+    tool_name = Column(String(128))
+    decision = Column(String(16))                # allow | deny | ask
+    scope = Column(String(16))                   # once | session | forever
+    
+    args_pattern = Column(JSON)                  # 可选:对参数做模式匹配
+    
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

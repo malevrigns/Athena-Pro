@@ -1,0 +1,108 @@
+"""
+ch09 · 流式输出 · 4 种模式对比 demo
+运行前确保 export OPENAI_API_KEY=sk-...
+"""
+import asyncio
+from langchain_openai import ChatOpenAI
+from langchain_core.tools import tool
+from langgraph.prebuilt import create_react_agent
+
+
+@tool
+def calc(expression: str) -> str:
+    """计算简单数学表达式,如 '23 * 7'。"""
+    try:
+        return str(eval(expression, {"__builtins__": {}}))
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def build_agent():
+    return create_react_agent(
+        model=ChatOpenAI(model="gpt-4o-mini"),
+        tools=[calc],
+    )
+
+
+QUESTION = "23 * 7 等于多少?然后加上 100"
+
+
+def demo_values():
+    """stream_mode='values':每个节点跑完,返回完整 state"""
+    print("\n========== values 模式 · 完整 state 快照 ==========")
+    agent = build_agent()
+    for chunk in agent.stream(
+        {"messages": [{"role": "user", "content": QUESTION}]},
+        stream_mode="values",
+    ):
+        # 每次 chunk 是完整 state,展示最后一条 message
+        last = chunk["messages"][-1]
+        print(f"  [{last.__class__.__name__}] {str(last.content)[:80]}")
+
+
+def demo_updates():
+    """stream_mode='updates':只返回每个节点的 diff,信息量更小"""
+    print("\n========== updates 模式 · 只看变化 ==========")
+    agent = build_agent()
+    for chunk in agent.stream(
+        {"messages": [{"role": "user", "content": QUESTION}]},
+        stream_mode="updates",
+    ):
+        # chunk 是 {节点名: 该节点产生的新数据}
+        for node, update in chunk.items():
+            msg_count = len(update.get("messages", []))
+            print(f"  节点 [{node}] 产生 {msg_count} 条新消息")
+
+
+def demo_messages():
+    """stream_mode='messages':token 级别打字机效果"""
+    print("\n========== messages 模式 · token 流 ==========")
+    agent = build_agent()
+    for chunk in agent.stream(
+        {"messages": [{"role": "user", "content": QUESTION}]},
+        stream_mode="messages",
+    ):
+        msg, meta = chunk
+        if hasattr(msg, "content") and msg.content:
+            print(msg.content, end="", flush=True)
+    print()
+
+
+def demo_multi_mode():
+    """stream_mode=['updates', 'messages']:多模式混流"""
+    print("\n========== 多模式混流(生产推荐) ==========")
+    agent = build_agent()
+    for mode, chunk in agent.stream(
+        {"messages": [{"role": "user", "content": QUESTION}]},
+        stream_mode=["updates", "messages"],
+    ):
+        if mode == "updates":
+            for node in chunk:
+                print(f"\n[节点 {node}]", end=" ")
+        elif mode == "messages":
+            msg, _ = chunk
+            if hasattr(msg, "content") and msg.content:
+                print(msg.content, end="", flush=True)
+    print()
+
+
+async def demo_async():
+    """异步版,生产环境用 .astream()"""
+    print("\n========== 异步流(astream)==========")
+    agent = build_agent()
+    async for chunk in agent.astream(
+        {"messages": [{"role": "user", "content": QUESTION}]},
+        stream_mode="messages",
+    ):
+        msg, _ = chunk
+        if hasattr(msg, "content") and msg.content:
+            print(msg.content, end="", flush=True)
+    print()
+
+
+if __name__ == "__main__":
+    demo_values()
+    demo_updates()
+    demo_messages()
+    demo_multi_mode()
+    asyncio.run(demo_async())

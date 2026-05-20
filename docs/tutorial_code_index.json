@@ -1,0 +1,1738 @@
+[
+  {
+    "chapter": "preface",
+    "file": "tutorial_code/preface/001_env-setup.sh",
+    "lang": "bash",
+    "lines": 14,
+    "title": "env-setup.sh"
+  },
+  {
+    "chapter": "ch01",
+    "file": "tutorial_code/ch01/002_传统_LangChain_Agent(旧写法).py",
+    "lang": "python",
+    "lines": 10,
+    "title": "传统 LangChain Agent(旧写法)"
+  },
+  {
+    "chapter": "ch02",
+    "file": "tutorial_code/ch02/003_定义_State.py",
+    "lang": "python",
+    "lines": 6,
+    "title": "定义 State"
+  },
+  {
+    "chapter": "ch02",
+    "file": "tutorial_code/ch02/004_写一个节点.py",
+    "lang": "python",
+    "lines": 10,
+    "title": "写一个节点"
+  },
+  {
+    "chapter": "ch02",
+    "file": "tutorial_code/ch02/005_最小可运行的图.py",
+    "lang": "python",
+    "lines": 25,
+    "title": "最小可运行的图"
+  },
+  {
+    "chapter": "ch03",
+    "file": "tutorial_code/ch03/006_hello_langgraph.py",
+    "lang": "python",
+    "lines": 33,
+    "title": "hello_langgraph.py"
+  },
+  {
+    "chapter": "ch03",
+    "file": "tutorial_code/ch03/007_输出.txt",
+    "lang": "text",
+    "lines": 2,
+    "title": "输出"
+  },
+  {
+    "chapter": "ch03",
+    "file": "tutorial_code/ch03/008_把图画出来.py",
+    "lang": "python",
+    "lines": 9,
+    "title": "把图画出来"
+  },
+  {
+    "chapter": "ch04",
+    "file": "tutorial_code/ch04/009_错误示范_-_历史会被覆盖.py",
+    "lang": "python",
+    "lines": 26,
+    "title": "错误示范 - 历史会被覆盖"
+  },
+  {
+    "chapter": "ch04",
+    "file": "tutorial_code/ch04/010_正确写法_-_指定_reducer.py",
+    "lang": "python",
+    "lines": 7,
+    "title": "正确写法 - 指定 reducer"
+  },
+  {
+    "chapter": "ch04",
+    "file": "tutorial_code/ch04/011_用_MessagesState_省事.py",
+    "lang": "python",
+    "lines": 10,
+    "title": "用 MessagesState 省事"
+  },
+  {
+    "chapter": "ch04",
+    "file": "tutorial_code/ch04/012_常见_reducer_用法.py",
+    "lang": "python",
+    "lines": 15,
+    "title": "常见 reducer 用法"
+  },
+  {
+    "chapter": "ch04",
+    "file": "tutorial_code/ch04/013_chat_bot.py",
+    "lang": "python",
+    "lines": 25,
+    "title": "chat_bot.py"
+  },
+  {
+    "chapter": "ch04",
+    "file": "tutorial_code/ch04/014_snippet_014.txt",
+    "lang": "text",
+    "lines": 2,
+    "title": "snippet_014"
+  },
+  {
+    "chapter": "ch04",
+    "file": "tutorial_code/ch04/015_add_messages_简化版伪代码.py",
+    "lang": "python",
+    "lines": 27,
+    "title": "add_messages 简化版伪代码"
+  },
+  {
+    "chapter": "ch04",
+    "file": "tutorial_code/ch04/016_利用按_id_替换实现_编辑历史.py",
+    "lang": "python",
+    "lines": 16,
+    "title": "利用按 id 替换实现\"编辑历史\""
+  },
+  {
+    "chapter": "ch05",
+    "file": "tutorial_code/ch05/017_定义工具.py",
+    "lang": "python",
+    "lines": 28,
+    "title": "定义工具"
+  },
+  {
+    "chapter": "ch05",
+    "file": "tutorial_code/ch05/018_bind_tools.py",
+    "lang": "python",
+    "lines": 10,
+    "title": "bind_tools"
+  },
+  {
+    "chapter": "ch05",
+    "file": "tutorial_code/ch05/019_ToolNode_的用法.py",
+    "lang": "python",
+    "lines": 4,
+    "title": "ToolNode 的用法"
+  },
+  {
+    "chapter": "ch05",
+    "file": "tutorial_code/ch05/020_❌_糟糕示范.py",
+    "lang": "python",
+    "lines": 4,
+    "title": "❌ 糟糕示范"
+  },
+  {
+    "chapter": "ch05",
+    "file": "tutorial_code/ch05/021_⚠️_一般示范.py",
+    "lang": "python",
+    "lines": 4,
+    "title": "⚠️ 一般示范"
+  },
+  {
+    "chapter": "ch05",
+    "file": "tutorial_code/ch05/022_✓_优秀示范.py",
+    "lang": "python",
+    "lines": 23,
+    "title": "✓ 优秀示范"
+  },
+  {
+    "chapter": "ch05",
+    "file": "tutorial_code/ch05/023_最简单的工具调用图(直来直去版).py",
+    "lang": "python",
+    "lines": 39,
+    "title": "最简单的工具调用图(直来直去版)"
+  },
+  {
+    "chapter": "ch06",
+    "file": "tutorial_code/ch06/024_条件边的三要素.py",
+    "lang": "python",
+    "lines": 15,
+    "title": "条件边的三要素"
+  },
+  {
+    "chapter": "ch06",
+    "file": "tutorial_code/ch06/025_省略_path_map.py",
+    "lang": "python",
+    "lines": 5,
+    "title": "省略 path_map"
+  },
+  {
+    "chapter": "ch06",
+    "file": "tutorial_code/ch06/026_完整的_ReAct_循环图.py",
+    "lang": "python",
+    "lines": 45,
+    "title": "完整的 ReAct 循环图"
+  },
+  {
+    "chapter": "ch06",
+    "file": "tutorial_code/ch06/027_运行刚才那个图.py",
+    "lang": "python",
+    "lines": 12,
+    "title": "运行刚才那个图"
+  },
+  {
+    "chapter": "ch06",
+    "file": "tutorial_code/ch06/028_调整递归限制.py",
+    "lang": "python",
+    "lines": 4,
+    "title": "调整递归限制"
+  },
+  {
+    "chapter": "ch07",
+    "file": "tutorial_code/ch07/029_create_react_agent_用法.py",
+    "lang": "python",
+    "lines": 27,
+    "title": "create_react_agent 用法"
+  },
+  {
+    "chapter": "ch07",
+    "file": "tutorial_code/ch07/030_create_react_agent_的简化等价实现.py",
+    "lang": "python",
+    "lines": 41,
+    "title": "create_react_agent 的简化等价实现"
+  },
+  {
+    "chapter": "ch08",
+    "file": "tutorial_code/ch08/031_没有记忆的_Agent.py",
+    "lang": "python",
+    "lines": 5,
+    "title": "没有记忆的 Agent"
+  },
+  {
+    "chapter": "ch08",
+    "file": "tutorial_code/ch08/032_加上_InMemorySaver.py",
+    "lang": "python",
+    "lines": 25,
+    "title": "加上 InMemorySaver"
+  },
+  {
+    "chapter": "ch08",
+    "file": "tutorial_code/ch08/033_SqliteSaver_存到本地文件.py",
+    "lang": "python",
+    "lines": 15,
+    "title": "SqliteSaver:存到本地文件"
+  },
+  {
+    "chapter": "ch08",
+    "file": "tutorial_code/ch08/034_多用户隔离.py",
+    "lang": "python",
+    "lines": 11,
+    "title": "多用户隔离"
+  },
+  {
+    "chapter": "ch08",
+    "file": "tutorial_code/ch08/035_查看与回放.py",
+    "lang": "python",
+    "lines": 16,
+    "title": "查看与回放"
+  },
+  {
+    "chapter": "ch08",
+    "file": "tutorial_code/ch08/036_ch08_memory_agent.py_·_完整可跑",
+    "lang": "python",
+    "lines": 89,
+    "title": "ch08_memory_agent.py · 完整可跑"
+  },
+  {
+    "chapter": "ch09",
+    "file": "tutorial_code/ch09/037_stream_mode='updates'.py",
+    "lang": "python",
+    "lines": 14,
+    "title": "stream_mode='updates'"
+  },
+  {
+    "chapter": "ch09",
+    "file": "tutorial_code/ch09/038_stream_mode='messages'.py",
+    "lang": "python",
+    "lines": 6,
+    "title": "stream_mode='messages'"
+  },
+  {
+    "chapter": "ch09",
+    "file": "tutorial_code/ch09/039_同时监听多种事件.py",
+    "lang": "python",
+    "lines": 10,
+    "title": "同时监听多种事件"
+  },
+  {
+    "chapter": "ch09",
+    "file": "tutorial_code/ch09/040_异步流.py",
+    "lang": "python",
+    "lines": 10,
+    "title": "异步流"
+  },
+  {
+    "chapter": "ch09",
+    "file": "tutorial_code/ch09/041_ch09_streaming.py_·_完整可跑",
+    "lang": "python",
+    "lines": 108,
+    "title": "ch09_streaming.py · 完整可跑"
+  },
+  {
+    "chapter": "ch10",
+    "file": "tutorial_code/ch10/042_human_approval.py",
+    "lang": "python",
+    "lines": 63,
+    "title": "human_approval.py"
+  },
+  {
+    "chapter": "ch10",
+    "file": "tutorial_code/ch10/043_snippet_043.txt",
+    "lang": "text",
+    "lines": 3,
+    "title": "snippet_043"
+  },
+  {
+    "chapter": "ch10",
+    "file": "tutorial_code/ch10/044_ch10_hitl.py_·_完整可跑",
+    "lang": "python",
+    "lines": 133,
+    "title": "ch10_hitl.py · 完整可跑"
+  },
+  {
+    "chapter": "ch11",
+    "file": "tutorial_code/ch11/045_Command_基本用法.py",
+    "lang": "python",
+    "lines": 11,
+    "title": "Command 基本用法"
+  },
+  {
+    "chapter": "ch11",
+    "file": "tutorial_code/ch11/046_旧写法_节点_+_路由函数_+_add_conditional_edges.py",
+    "lang": "python",
+    "lines": 9,
+    "title": "旧写法:节点 + 路由函数 + add_conditional_edges"
+  },
+  {
+    "chapter": "ch11",
+    "file": "tutorial_code/ch11/047_新写法_用_Command_二合一.py",
+    "lang": "python",
+    "lines": 13,
+    "title": "新写法:用 Command 二合一"
+  },
+  {
+    "chapter": "ch11",
+    "file": "tutorial_code/ch11/048_跳到父图.py",
+    "lang": "python",
+    "lines": 5,
+    "title": "跳到父图"
+  },
+  {
+    "chapter": "ch11",
+    "file": "tutorial_code/ch11/049_ch11_command.py_·_完整可跑",
+    "lang": "python",
+    "lines": 118,
+    "title": "ch11_command.py · 完整可跑"
+  },
+  {
+    "chapter": "ch12",
+    "file": "tutorial_code/ch12/050_simple_supervisor.py",
+    "lang": "python",
+    "lines": 72,
+    "title": "simple_supervisor.py"
+  },
+  {
+    "chapter": "ch12",
+    "file": "tutorial_code/ch12/051_ch12_supervisor.py_·_完整可跑",
+    "lang": "python",
+    "lines": 124,
+    "title": "ch12_supervisor.py · 完整可跑"
+  },
+  {
+    "chapter": "ch13",
+    "file": "tutorial_code/ch13/052_Handoff_工具模板.py",
+    "lang": "python",
+    "lines": 32,
+    "title": "Handoff 工具模板"
+  },
+  {
+    "chapter": "ch13",
+    "file": "tutorial_code/ch13/053_ch13_handoff.py_·_完整可跑",
+    "lang": "python",
+    "lines": 118,
+    "title": "ch13_handoff.py · 完整可跑"
+  },
+  {
+    "chapter": "ch15",
+    "file": "tutorial_code/ch15/054_装_uv_并初始化项目.sh",
+    "lang": "bash",
+    "lines": 9,
+    "title": "装 uv 并初始化项目"
+  },
+  {
+    "chapter": "ch15",
+    "file": "tutorial_code/ch15/055_pyproject.toml",
+    "lang": "toml",
+    "lines": 88,
+    "title": "pyproject.toml"
+  },
+  {
+    "chapter": "ch15",
+    "file": "tutorial_code/ch15/056_建立环境.sh",
+    "lang": "bash",
+    "lines": 15,
+    "title": "建立环境"
+  },
+  {
+    "chapter": "ch15",
+    "file": "tutorial_code/ch15/057_tree(从顶向下).sh",
+    "lang": "bash",
+    "lines": 77,
+    "title": "tree(从顶向下)"
+  },
+  {
+    "chapter": "ch15",
+    "file": "tutorial_code/ch15/058_src_athena_config.py",
+    "lang": "python",
+    "lines": 94,
+    "title": "src/athena/config.py"
+  },
+  {
+    "chapter": "ch15",
+    "file": "tutorial_code/ch15/059_❌_Pydantic_v1_时代写法,v2_会报_ImportError.py",
+    "lang": "python",
+    "lines": 1,
+    "title": "❌ Pydantic v1 时代写法,v2 会报 ImportError"
+  },
+  {
+    "chapter": "ch15",
+    "file": "tutorial_code/ch15/060_✓_Pydantic_v2_正确写法.py",
+    "lang": "python",
+    "lines": 1,
+    "title": "✓ Pydantic v2 正确写法"
+  },
+  {
+    "chapter": "ch15",
+    "file": "tutorial_code/ch15/061_老写法(v1)·_已废弃.py",
+    "lang": "python",
+    "lines": 6,
+    "title": "老写法(v1)· 已废弃"
+  },
+  {
+    "chapter": "ch15",
+    "file": "tutorial_code/ch15/062_新写法(v2)·_我们用这个.py",
+    "lang": "python",
+    "lines": 3,
+    "title": "新写法(v2)· 我们用这个"
+  },
+  {
+    "chapter": "ch15",
+    "file": "tutorial_code/ch15/063_单测里重置_settings.py",
+    "lang": "python",
+    "lines": 5,
+    "title": "单测里重置 settings"
+  },
+  {
+    "chapter": "ch15",
+    "file": "tutorial_code/ch15/064_FastAPI_路由依赖注入.py",
+    "lang": "python",
+    "lines": 6,
+    "title": "FastAPI 路由依赖注入"
+  },
+  {
+    "chapter": "ch15",
+    "file": "tutorial_code/ch15/065_.env.example",
+    "lang": "bash",
+    "lines": 27,
+    "title": ".env.example"
+  },
+  {
+    "chapter": "ch15",
+    "file": "tutorial_code/ch15/066_Makefile.txt",
+    "lang": "makefile",
+    "lines": 32,
+    "title": "Makefile"
+  },
+  {
+    "chapter": "ch16",
+    "file": "tutorial_code/ch16/067_src_athena_state_schemas.py",
+    "lang": "python",
+    "lines": 133,
+    "title": "src/athena/state/schemas.py"
+  },
+  {
+    "chapter": "ch17",
+    "file": "tutorial_code/ch17/068_src_athena_tools_search.py",
+    "lang": "python",
+    "lines": 138,
+    "title": "src/athena/tools/search.py"
+  },
+  {
+    "chapter": "ch17",
+    "file": "tutorial_code/ch17/069_src_athena_tools_cache.py",
+    "lang": "python",
+    "lines": 52,
+    "title": "src/athena/tools/cache.py"
+  },
+  {
+    "chapter": "ch17",
+    "file": "tutorial_code/ch17/070_src_athena_tools_fetcher.py",
+    "lang": "python",
+    "lines": 53,
+    "title": "src/athena/tools/fetcher.py"
+  },
+  {
+    "chapter": "ch18",
+    "file": "tutorial_code/ch18/071_src_athena_prompts_planner.py",
+    "lang": "python",
+    "lines": 77,
+    "title": "src/athena/prompts/planner.py"
+  },
+  {
+    "chapter": "ch18",
+    "file": "tutorial_code/ch18/072_src_athena_agents_planner.py",
+    "lang": "python",
+    "lines": 112,
+    "title": "src/athena/agents/planner.py"
+  },
+  {
+    "chapter": "ch19",
+    "file": "tutorial_code/ch19/073_src_athena_agents_researcher.py",
+    "lang": "python",
+    "lines": 197,
+    "title": "src/athena/agents/researcher.py"
+  },
+  {
+    "chapter": "ch19",
+    "file": "tutorial_code/ch19/074_src_athena_prompts_researcher.py",
+    "lang": "python",
+    "lines": 25,
+    "title": "src/athena/prompts/researcher.py"
+  },
+  {
+    "chapter": "ch19",
+    "file": "tutorial_code/ch19/075_预告_supervisor_怎么发_Send.py",
+    "lang": "python",
+    "lines": 20,
+    "title": "预告:supervisor 怎么发 Send"
+  },
+  {
+    "chapter": "ch20",
+    "file": "tutorial_code/ch20/076_src_athena_agents_supervisor.py",
+    "lang": "python",
+    "lines": 103,
+    "title": "src/athena/agents/supervisor.py"
+  },
+  {
+    "chapter": "ch20",
+    "file": "tutorial_code/ch20/077_src_athena_graph_subgraphs.py",
+    "lang": "python",
+    "lines": 45,
+    "title": "src/athena/graph/subgraphs.py"
+  },
+  {
+    "chapter": "ch20",
+    "file": "tutorial_code/ch20/078_src_athena_graph_builder.py",
+    "lang": "python",
+    "lines": 74,
+    "title": "src/athena/graph/builder.py"
+  },
+  {
+    "chapter": "ch21",
+    "file": "tutorial_code/ch21/079_src_athena_agents_fact_checker.py",
+    "lang": "python",
+    "lines": 150,
+    "title": "src/athena/agents/fact_checker.py"
+  },
+  {
+    "chapter": "ch21",
+    "file": "tutorial_code/ch21/080_src_athena_agents_citation_validator.py",
+    "lang": "python",
+    "lines": 67,
+    "title": "src/athena/agents/citation_validator.py"
+  },
+  {
+    "chapter": "ch21",
+    "file": "tutorial_code/ch21/081_src_athena_agents_reviewer.py",
+    "lang": "python",
+    "lines": 134,
+    "title": "src/athena/agents/reviewer.py"
+  },
+  {
+    "chapter": "ch22",
+    "file": "tutorial_code/ch22/082_src_athena_agents_writer.py",
+    "lang": "python",
+    "lines": 167,
+    "title": "src/athena/agents/writer.py"
+  },
+  {
+    "chapter": "ch22",
+    "file": "tutorial_code/ch22/083_最终输出(节选).txt",
+    "lang": "markdown",
+    "lines": 21,
+    "title": "最终输出(节选)"
+  },
+  {
+    "chapter": "ch23",
+    "file": "tutorial_code/ch23/084_src_athena_store_checkpointer.py",
+    "lang": "python",
+    "lines": 76,
+    "title": "src/athena/store/checkpointer.py"
+  },
+  {
+    "chapter": "ch23",
+    "file": "tutorial_code/ch23/085_src_athena_graph_builders.py(最终版)",
+    "lang": "python",
+    "lines": 31,
+    "title": "src/athena/graph/builders.py(最终版)"
+  },
+  {
+    "chapter": "ch23",
+    "file": "tutorial_code/ch23/086_src_athena_recovery.py_·_启动扫描未完成任务.py",
+    "lang": "python",
+    "lines": 40,
+    "title": "src/athena/recovery.py · 启动扫描未完成任务"
+  },
+  {
+    "chapter": "ch24",
+    "file": "tutorial_code/ch24/087_src_athena_api_main.py",
+    "lang": "python",
+    "lines": 123,
+    "title": "src/athena/api/main.py"
+  },
+  {
+    "chapter": "ch24",
+    "file": "tutorial_code/ch24/088_src_athena_api_streaming.py",
+    "lang": "python",
+    "lines": 87,
+    "title": "src/athena/api/streaming.py"
+  },
+  {
+    "chapter": "ch24",
+    "file": "tutorial_code/ch24/089_src_athena_api_schemas.py",
+    "lang": "python",
+    "lines": 28,
+    "title": "src/athena/api/schemas.py"
+  },
+  {
+    "chapter": "ch24",
+    "file": "tutorial_code/ch24/090_前端_SSE_接入示例.js",
+    "lang": "javascript",
+    "lines": 30,
+    "title": "前端 SSE 接入示例"
+  },
+  {
+    "chapter": "ch25",
+    "file": "tutorial_code/ch25/091_src_athena_graph_nodes.py_·_plan_review_节点.py",
+    "lang": "python",
+    "lines": 75,
+    "title": "src/athena/graph/nodes.py · plan_review 节点"
+  },
+  {
+    "chapter": "ch25",
+    "file": "tutorial_code/ch25/092_src_athena_timeouts.py_·_超时哨兵",
+    "lang": "python",
+    "lines": 38,
+    "title": "src/athena/timeouts.py · 超时哨兵"
+  },
+  {
+    "chapter": "ch25",
+    "file": "tutorial_code/ch25/093_src_athena_api_main.py(节选)·_启动哨兵.py",
+    "lang": "python",
+    "lines": 30,
+    "title": "src/athena/api/main.py(节选)· 启动哨兵"
+  },
+  {
+    "chapter": "ch26",
+    "file": "tutorial_code/ch26/094_src_athena_observability_logging.py",
+    "lang": "python",
+    "lines": 44,
+    "title": "src/athena/observability/logging.py"
+  },
+  {
+    "chapter": "ch26",
+    "file": "tutorial_code/ch26/095_用法示例.py",
+    "lang": "python",
+    "lines": 13,
+    "title": "用法示例"
+  },
+  {
+    "chapter": "ch26",
+    "file": "tutorial_code/ch26/096_src_athena_api_middleware.py_·_trace_id_注入.py",
+    "lang": "python",
+    "lines": 28,
+    "title": "src/athena/api/middleware.py · trace_id 注入"
+  },
+  {
+    "chapter": "ch26",
+    "file": "tutorial_code/ch26/097_src_athena_observability___init__.py",
+    "lang": "python",
+    "lines": 25,
+    "title": "src/athena/observability/__init__.py"
+  },
+  {
+    "chapter": "ch26",
+    "file": "tutorial_code/ch26/098_src_athena_observability_metrics.py",
+    "lang": "python",
+    "lines": 82,
+    "title": "src/athena/observability/metrics.py"
+  },
+  {
+    "chapter": "ch26",
+    "file": "tutorial_code/ch26/099_几个关键_PromQL_查询.txt",
+    "lang": "promql",
+    "lines": 19,
+    "title": "几个关键 PromQL 查询"
+  },
+  {
+    "chapter": "ch27",
+    "file": "tutorial_code/ch27/100_src_athena_costs.py",
+    "lang": "python",
+    "lines": 136,
+    "title": "src/athena/costs.py"
+  },
+  {
+    "chapter": "ch27",
+    "file": "tutorial_code/ch27/101_src_athena_llm_factory.py_·_统一创建带追踪的_LLM.py",
+    "lang": "python",
+    "lines": 21,
+    "title": "src/athena/llm_factory.py · 统一创建带追踪的 LLM"
+  },
+  {
+    "chapter": "ch27",
+    "file": "tutorial_code/ch27/102_节点里的用法.py",
+    "lang": "python",
+    "lines": 7,
+    "title": "节点里的用法"
+  },
+  {
+    "chapter": "ch27",
+    "file": "tutorial_code/ch27/103_src_athena_agents_supervisor.py(节选)·_加预算检查.py",
+    "lang": "python",
+    "lines": 23,
+    "title": "src/athena/agents/supervisor.py(节选)· 加预算检查"
+  },
+  {
+    "chapter": "ch27",
+    "file": "tutorial_code/ch27/104_src_athena_api_main.py_·_加_cost_端点.py",
+    "lang": "python",
+    "lines": 18,
+    "title": "src/athena/api/main.py · 加 /cost 端点"
+  },
+  {
+    "chapter": "ch28",
+    "file": "tutorial_code/ch28/105_src_athena_llm_factory.py(完整版)",
+    "lang": "python",
+    "lines": 72,
+    "title": "src/athena/llm_factory.py(完整版)"
+  },
+  {
+    "chapter": "ch28",
+    "file": "tutorial_code/ch28/106_src_athena_tools_circuit_breaker.py",
+    "lang": "python",
+    "lines": 91,
+    "title": "src/athena/tools/circuit_breaker.py"
+  },
+  {
+    "chapter": "ch28",
+    "file": "tutorial_code/ch28/107_src_athena_tools_web_search.py_·_接入熔断器",
+    "lang": "python",
+    "lines": 12,
+    "title": "src/athena/tools/web_search.py · 接入熔断器"
+  },
+  {
+    "chapter": "ch28",
+    "file": "tutorial_code/ch28/108_src_athena_graph_builders.py(完整版)",
+    "lang": "python",
+    "lines": 39,
+    "title": "src/athena/graph/builders.py(完整版)"
+  },
+  {
+    "chapter": "ch28",
+    "file": "tutorial_code/ch28/109_src_athena_dlq.py",
+    "lang": "python",
+    "lines": 61,
+    "title": "src/athena/dlq.py"
+  },
+  {
+    "chapter": "ch29",
+    "file": "tutorial_code/ch29/110_tests_unit_test_planner.py",
+    "lang": "python",
+    "lines": 72,
+    "title": "tests/unit/test_planner.py"
+  },
+  {
+    "chapter": "ch29",
+    "file": "tutorial_code/ch29/111_tests_integration_test_e2e.py",
+    "lang": "python",
+    "lines": 59,
+    "title": "tests/integration/test_e2e.py"
+  },
+  {
+    "chapter": "ch29",
+    "file": "tutorial_code/ch29/112_tests_eval_dataset.jsonl(节选)",
+    "lang": "python",
+    "lines": 5,
+    "title": "tests/eval/dataset.jsonl(节选)"
+  },
+  {
+    "chapter": "ch29",
+    "file": "tutorial_code/ch29/113_tests_eval_run_eval.py_·_LLM-as-Judge.py",
+    "lang": "python",
+    "lines": 113,
+    "title": "tests/eval/run_eval.py · LLM-as-Judge"
+  },
+  {
+    "chapter": "ch29",
+    "file": "tutorial_code/ch29/114_.github_workflows_test.yml",
+    "lang": "yaml",
+    "lines": 41,
+    "title": ".github/workflows/test.yml"
+  },
+  {
+    "chapter": "ch30",
+    "file": "tutorial_code/ch30/115_config_permissions.yaml",
+    "lang": "yaml",
+    "lines": 67,
+    "title": "config/permissions.yaml"
+  },
+  {
+    "chapter": "ch30",
+    "file": "tutorial_code/ch30/116_src_athena_security_permissions.py",
+    "lang": "python",
+    "lines": 195,
+    "title": "src/athena/security/permissions.py"
+  },
+  {
+    "chapter": "ch30",
+    "file": "tutorial_code/ch30/117_src_athena_security_guarded_tool_node.py",
+    "lang": "python",
+    "lines": 120,
+    "title": "src/athena/security/guarded_tool_node.py"
+  },
+  {
+    "chapter": "ch30",
+    "file": "tutorial_code/ch30/118_src_athena_graph_builders.py(替换_ToolNode).py",
+    "lang": "python",
+    "lines": 11,
+    "title": "src/athena/graph/builders.py(替换 ToolNode)"
+  },
+  {
+    "chapter": "ch30",
+    "file": "tutorial_code/ch30/119_前端_PermissionDialog_组件(预览,完整实现见_Part_V).txt",
+    "lang": "tsx",
+    "lines": 19,
+    "title": "前端 PermissionDialog 组件(预览,完整实现见 Part V)"
+  },
+  {
+    "chapter": "ch31",
+    "file": "tutorial_code/ch31/120_docker_sandbox_Dockerfile",
+    "lang": "dockerfile",
+    "lines": 28,
+    "title": "docker/sandbox/Dockerfile"
+  },
+  {
+    "chapter": "ch31",
+    "file": "tutorial_code/ch31/121_docker_sandbox_requirements-sandbox.txt",
+    "lang": "text",
+    "lines": 18,
+    "title": "docker/sandbox/requirements-sandbox.txt"
+  },
+  {
+    "chapter": "ch31",
+    "file": "tutorial_code/ch31/122_src_athena_sandbox_manager.py",
+    "lang": "python",
+    "lines": 230,
+    "title": "src/athena/sandbox/manager.py"
+  },
+  {
+    "chapter": "ch31",
+    "file": "tutorial_code/ch31/123_tests_integration_test_sandbox.py",
+    "lang": "python",
+    "lines": 74,
+    "title": "tests/integration/test_sandbox.py"
+  },
+  {
+    "chapter": "ch32",
+    "file": "tutorial_code/ch32/124_src_athena_tools_sandbox_tools.py",
+    "lang": "python",
+    "lines": 96,
+    "title": "src/athena/tools/sandbox_tools.py"
+  },
+  {
+    "chapter": "ch32",
+    "file": "tutorial_code/ch32/125_src_athena_sandbox_manager.py(扩展)·_流式执行.py",
+    "lang": "python",
+    "lines": 94,
+    "title": "src/athena/sandbox/manager.py(扩展)· 流式执行"
+  },
+  {
+    "chapter": "ch32",
+    "file": "tutorial_code/ch32/126_流式工具(高级).py",
+    "lang": "python",
+    "lines": 17,
+    "title": "流式工具(高级)"
+  },
+  {
+    "chapter": "ch32",
+    "file": "tutorial_code/ch32/127_src_athena_sandbox_pool.py",
+    "lang": "python",
+    "lines": 191,
+    "title": "src/athena/sandbox/pool.py"
+  },
+  {
+    "chapter": "ch32",
+    "file": "tutorial_code/ch32/128_src_athena_graph_builders.py",
+    "lang": "python",
+    "lines": 15,
+    "title": "src/athena/graph/builders.py"
+  },
+  {
+    "chapter": "ch33",
+    "file": "tutorial_code/ch33/129_~_.athena_mcp.json",
+    "lang": "json",
+    "lines": 29,
+    "title": "~/.athena/mcp.json"
+  },
+  {
+    "chapter": "ch33",
+    "file": "tutorial_code/ch33/130_src_athena_mcp_client.py_·_配置与数据类",
+    "lang": "python",
+    "lines": 44,
+    "title": "src/athena/mcp/client.py · 配置与数据类"
+  },
+  {
+    "chapter": "ch33",
+    "file": "tutorial_code/ch33/131_client.py_·_MCPStdioClient.start()",
+    "lang": "python",
+    "lines": 56,
+    "title": "client.py · MCPStdioClient.start()"
+  },
+  {
+    "chapter": "ch33",
+    "file": "tutorial_code/ch33/132_client.py_·_stop_call_tool.py",
+    "lang": "python",
+    "lines": 20,
+    "title": "client.py · stop / call_tool"
+  },
+  {
+    "chapter": "ch33",
+    "file": "tutorial_code/ch33/133_client.py_·_JSON-RPC_请求.py",
+    "lang": "python",
+    "lines": 22,
+    "title": "client.py · JSON-RPC 请求"
+  },
+  {
+    "chapter": "ch33",
+    "file": "tutorial_code/ch33/134_client.py_·_读循环与错误类.py",
+    "lang": "python",
+    "lines": 40,
+    "title": "client.py · 读循环与错误类"
+  },
+  {
+    "chapter": "ch33",
+    "file": "tutorial_code/ch33/135_src_athena_mcp_adapter.py_·_JSON_Schema_转_Pydantic.py",
+    "lang": "python",
+    "lines": 34,
+    "title": "src/athena/mcp/adapter.py · JSON Schema 转 Pydantic"
+  },
+  {
+    "chapter": "ch33",
+    "file": "tutorial_code/ch33/136_adapter.py_·_MCPLangChainTool.py",
+    "lang": "python",
+    "lines": 43,
+    "title": "adapter.py · MCPLangChainTool"
+  },
+  {
+    "chapter": "ch33",
+    "file": "tutorial_code/ch33/137_src_athena_mcp_manager.py_·_加载配置",
+    "lang": "python",
+    "lines": 39,
+    "title": "src/athena/mcp/manager.py · 加载配置"
+  },
+  {
+    "chapter": "ch33",
+    "file": "tutorial_code/ch33/138_manager.py_·_并发启动_+_工具汇总.py",
+    "lang": "python",
+    "lines": 29,
+    "title": "manager.py · 并发启动 + 工具汇总"
+  },
+  {
+    "chapter": "ch33",
+    "file": "tutorial_code/ch33/139_manager.py_·_查询接口_+_单例.py",
+    "lang": "python",
+    "lines": 21,
+    "title": "manager.py · 查询接口 + 单例"
+  },
+  {
+    "chapter": "ch33",
+    "file": "tutorial_code/ch33/140_src_athena_api_main.py(节选)",
+    "lang": "python",
+    "lines": 9,
+    "title": "src/athena/api/main.py(节选)"
+  },
+  {
+    "chapter": "ch33",
+    "file": "tutorial_code/ch33/141_src_athena_agents_researcher.py_·_工具列表动态化.py",
+    "lang": "python",
+    "lines": 9,
+    "title": "src/athena/agents/researcher.py · 工具列表动态化"
+  },
+  {
+    "chapter": "ch33",
+    "file": "tutorial_code/ch33/142_src_athena_permissions_engine.py(增量)",
+    "lang": "python",
+    "lines": 14,
+    "title": "src/athena/permissions/engine.py(增量)"
+  },
+  {
+    "chapter": "ch34",
+    "file": "tutorial_code/ch34/143_src_athena_api_ws.py_·_协议与主循环",
+    "lang": "python",
+    "lines": 35,
+    "title": "src/athena/api/ws.py · 协议与主循环"
+  },
+  {
+    "chapter": "ch34",
+    "file": "tutorial_code/ch34/144_ws.py_·_主循环",
+    "lang": "python",
+    "lines": 60,
+    "title": "ws.py · 主循环"
+  },
+  {
+    "chapter": "ch34",
+    "file": "tutorial_code/ch34/145_ws.py_·_流转发",
+    "lang": "python",
+    "lines": 48,
+    "title": "ws.py · 流转发"
+  },
+  {
+    "chapter": "ch34",
+    "file": "tutorial_code/ch34/146_src_athena_api_interrupt.py_·_contextvars_局部信号.py",
+    "lang": "python",
+    "lines": 30,
+    "title": "src/athena/api/interrupt.py · contextvars 局部信号"
+  },
+  {
+    "chapter": "ch34",
+    "file": "tutorial_code/ch34/147_interrupt.py_·_全局注册表_+_中断_API.py",
+    "lang": "python",
+    "lines": 29,
+    "title": "interrupt.py · 全局注册表 + 中断 API"
+  },
+  {
+    "chapter": "ch34",
+    "file": "tutorial_code/ch34/148_src_athena_costs.py(扩展)·_CostTrackingCallback_加_abort.py",
+    "lang": "python",
+    "lines": 12,
+    "title": "src/athena/costs.py(扩展)· CostTrackingCallback 加 abort"
+  },
+  {
+    "chapter": "ch34",
+    "file": "tutorial_code/ch34/149_前端伪代码.js",
+    "lang": "javascript",
+    "lines": 20,
+    "title": "前端伪代码"
+  },
+  {
+    "chapter": "ch35",
+    "file": "tutorial_code/ch35/150_src_athena_store_models.py(增量)",
+    "lang": "python",
+    "lines": 74,
+    "title": "src/athena/store/models.py(增量)"
+  },
+  {
+    "chapter": "ch35",
+    "file": "tutorial_code/ch35/151_src_athena_sessions_service.py_·_复用规则",
+    "lang": "python",
+    "lines": 44,
+    "title": "src/athena/sessions/service.py · 复用规则"
+  },
+  {
+    "chapter": "ch35",
+    "file": "tutorial_code/ch35/152_service.py_·_summary_查询.py",
+    "lang": "python",
+    "lines": 32,
+    "title": "service.py · summary 查询"
+  },
+  {
+    "chapter": "ch35",
+    "file": "tutorial_code/ch35/153_service.py_·_增量更新",
+    "lang": "python",
+    "lines": 13,
+    "title": "service.py · 增量更新"
+  },
+  {
+    "chapter": "ch35",
+    "file": "tutorial_code/ch35/154_src_athena_api_replay.py_·_端点",
+    "lang": "python",
+    "lines": 33,
+    "title": "src/athena/api/replay.py · 端点"
+  },
+  {
+    "chapter": "ch35",
+    "file": "tutorial_code/ch35/155_replay.py_·_历史_+_实时.py",
+    "lang": "python",
+    "lines": 38,
+    "title": "replay.py · 历史 + 实时"
+  },
+  {
+    "chapter": "ch36",
+    "file": "tutorial_code/ch36/156_src_athena_subagents_tool.py",
+    "lang": "python",
+    "lines": 48,
+    "title": "src/athena/subagents/tool.py"
+  },
+  {
+    "chapter": "ch36",
+    "file": "tutorial_code/ch36/157_src_athena_subagents_registry.py_·_数据类与工具工厂.py",
+    "lang": "python",
+    "lines": 39,
+    "title": "src/athena/subagents/registry.py · 数据类与工具工厂"
+  },
+  {
+    "chapter": "ch36",
+    "file": "tutorial_code/ch36/158_registry.py_·_注册表",
+    "lang": "python",
+    "lines": 43,
+    "title": "registry.py · 注册表"
+  },
+  {
+    "chapter": "ch36",
+    "file": "tutorial_code/ch36/159_registry.py_·_dispatch.py",
+    "lang": "python",
+    "lines": 22,
+    "title": "registry.py · dispatch"
+  },
+  {
+    "chapter": "ch36",
+    "file": "tutorial_code/ch36/160_src_athena_subagents_runner.py_·_主函数与迭代追踪.py",
+    "lang": "python",
+    "lines": 49,
+    "title": "src/athena/subagents/runner.py · 主函数与迭代追踪"
+  },
+  {
+    "chapter": "ch36",
+    "file": "tutorial_code/ch36/161_runner.py_·_超时与异常",
+    "lang": "python",
+    "lines": 23,
+    "title": "runner.py · 超时与异常"
+  },
+  {
+    "chapter": "ch36",
+    "file": "tutorial_code/ch36/162_src_athena_agents_researcher.py(增量)",
+    "lang": "python",
+    "lines": 14,
+    "title": "src/athena/agents/researcher.py(增量)"
+  },
+  {
+    "chapter": "ch36a",
+    "file": "tutorial_code/ch36a/163_skills_excel-analysis_SKILL.md",
+    "lang": "markdown",
+    "lines": 42,
+    "title": "skills/excel-analysis/SKILL.md"
+  },
+  {
+    "chapter": "ch36a",
+    "file": "tutorial_code/ch36a/164_src_athena_skills_registry.py",
+    "lang": "python",
+    "lines": 120,
+    "title": "src/athena/skills/registry.py"
+  },
+  {
+    "chapter": "ch36a",
+    "file": "tutorial_code/ch36a/165_src_athena_skills_loader.py",
+    "lang": "python",
+    "lines": 51,
+    "title": "src/athena/skills/loader.py"
+  },
+  {
+    "chapter": "ch36a",
+    "file": "tutorial_code/ch36a/166_src_athena_skills_tools.py",
+    "lang": "python",
+    "lines": 41,
+    "title": "src/athena/skills/tools.py"
+  },
+  {
+    "chapter": "ch36a",
+    "file": "tutorial_code/ch36a/167_src_athena_agents_researcher.py(修改)",
+    "lang": "python",
+    "lines": 13,
+    "title": "src/athena/agents/researcher.py(修改)"
+  },
+  {
+    "chapter": "ch36b",
+    "file": "tutorial_code/ch36b/168_src_athena_memory_schemas.py",
+    "lang": "python",
+    "lines": 64,
+    "title": "src/athena/memory/schemas.py"
+  },
+  {
+    "chapter": "ch36b",
+    "file": "tutorial_code/ch36b/169_src_athena_memory_collector.py",
+    "lang": "python",
+    "lines": 63,
+    "title": "src/athena/memory/collector.py"
+  },
+  {
+    "chapter": "ch36b",
+    "file": "tutorial_code/ch36b/170_src_athena_memory_extractor.py",
+    "lang": "python",
+    "lines": 128,
+    "title": "src/athena/memory/extractor.py"
+  },
+  {
+    "chapter": "ch36b",
+    "file": "tutorial_code/ch36b/171_src_athena_memory_store.py",
+    "lang": "python",
+    "lines": 69,
+    "title": "src/athena/memory/store.py"
+  },
+  {
+    "chapter": "ch36b",
+    "file": "tutorial_code/ch36b/172_src_athena_memory_injector.py",
+    "lang": "python",
+    "lines": 40,
+    "title": "src/athena/memory/injector.py"
+  },
+  {
+    "chapter": "ch36b",
+    "file": "tutorial_code/ch36b/173_src_athena_agents_planner.py(节选_·_修改)",
+    "lang": "python",
+    "lines": 16,
+    "title": "src/athena/agents/planner.py(节选 · 修改)"
+  },
+  {
+    "chapter": "ch36c",
+    "file": "tutorial_code/ch36c/174_src_athena_llm_cache.py",
+    "lang": "python",
+    "lines": 87,
+    "title": "src/athena/llm/cache.py"
+  },
+  {
+    "chapter": "ch36c",
+    "file": "tutorial_code/ch36c/175_src_athena_llm_factory.py(修改)",
+    "lang": "python",
+    "lines": 35,
+    "title": "src/athena/llm_factory.py(修改)"
+  },
+  {
+    "chapter": "ch36c",
+    "file": "tutorial_code/ch36c/176_src_athena_prefetch_predictive.py",
+    "lang": "python",
+    "lines": 99,
+    "title": "src/athena/prefetch/predictive.py"
+  },
+  {
+    "chapter": "ch36c",
+    "file": "tutorial_code/ch36c/177_src_athena_prefetch_cache.py",
+    "lang": "python",
+    "lines": 87,
+    "title": "src/athena/prefetch/cache.py"
+  },
+  {
+    "chapter": "ch36c",
+    "file": "tutorial_code/ch36c/178_src_athena_agents_researcher.py(节选_·_修改)",
+    "lang": "python",
+    "lines": 21,
+    "title": "src/athena/agents/researcher.py(节选 · 修改)"
+  },
+  {
+    "chapter": "ch37",
+    "file": "tutorial_code/ch37/179_web_·_Vue_3_项目根.txt",
+    "lang": "text",
+    "lines": 68,
+    "title": "web/ · Vue 3 项目根"
+  },
+  {
+    "chapter": "ch37",
+    "file": "tutorial_code/ch37/180_src_main.ts",
+    "lang": "typescript",
+    "lines": 19,
+    "title": "src/main.ts"
+  },
+  {
+    "chapter": "ch37",
+    "file": "tutorial_code/ch37/181_src_router_index.ts",
+    "lang": "typescript",
+    "lines": 74,
+    "title": "src/router/index.ts"
+  },
+  {
+    "chapter": "ch37",
+    "file": "tutorial_code/ch37/182_src_utils_http.ts",
+    "lang": "typescript",
+    "lines": 83,
+    "title": "src/utils/http.ts"
+  },
+  {
+    "chapter": "ch37",
+    "file": "tutorial_code/ch37/183_vite.config.ts(节选)",
+    "lang": "typescript",
+    "lines": 11,
+    "title": "vite.config.ts(节选)"
+  },
+  {
+    "chapter": "ch37",
+    "file": "tutorial_code/ch37/184_src_types_api.ts",
+    "lang": "typescript",
+    "lines": 47,
+    "title": "src/types/api.ts"
+  },
+  {
+    "chapter": "ch37",
+    "file": "tutorial_code/ch37/185_src_types_events.ts_·_SSE_事件类型.ts",
+    "lang": "typescript",
+    "lines": 49,
+    "title": "src/types/events.ts · SSE 事件类型"
+  },
+  {
+    "chapter": "ch37",
+    "file": "tutorial_code/ch37/186_src_stores_session.ts",
+    "lang": "typescript",
+    "lines": 68,
+    "title": "src/stores/session.ts"
+  },
+  {
+    "chapter": "ch38",
+    "file": "tutorial_code/ch38/187_src_stores_task.ts",
+    "lang": "typescript",
+    "lines": 99,
+    "title": "src/stores/task.ts"
+  },
+  {
+    "chapter": "ch38",
+    "file": "tutorial_code/ch38/188_src_composables_useEventStream.ts",
+    "lang": "typescript",
+    "lines": 99,
+    "title": "src/composables/useEventStream.ts"
+  },
+  {
+    "chapter": "ch38",
+    "file": "tutorial_code/ch38/189_src_composables_useTaskControl.ts",
+    "lang": "typescript",
+    "lines": 41,
+    "title": "src/composables/useTaskControl.ts"
+  },
+  {
+    "chapter": "ch38",
+    "file": "tutorial_code/ch38/190_src_components_task_FlowGraph.vue",
+    "lang": "vue",
+    "lines": 111,
+    "title": "src/components/task/FlowGraph.vue"
+  },
+  {
+    "chapter": "ch38",
+    "file": "tutorial_code/ch38/191_src_components_task_ThinkingPane.vue",
+    "lang": "vue",
+    "lines": 18,
+    "title": "src/components/task/ThinkingPane.vue"
+  },
+  {
+    "chapter": "ch38",
+    "file": "tutorial_code/ch38/192_src_components_task_TaskStream.vue",
+    "lang": "vue",
+    "lines": 70,
+    "title": "src/components/task/TaskStream.vue"
+  },
+  {
+    "chapter": "ch38",
+    "file": "tutorial_code/ch38/193_src_views_TaskView.vue",
+    "lang": "vue",
+    "lines": 17,
+    "title": "src/views/TaskView.vue"
+  },
+  {
+    "chapter": "ch39",
+    "file": "tutorial_code/ch39/194_src_components_report_ReportRenderer.vue",
+    "lang": "vue",
+    "lines": 71,
+    "title": "src/components/report/ReportRenderer.vue"
+  },
+  {
+    "chapter": "ch39",
+    "file": "tutorial_code/ch39/195_老写法_·_Vue_3.4_及以前",
+    "lang": "typescript",
+    "lines": 3,
+    "title": "老写法 · Vue 3.4 及以前"
+  },
+  {
+    "chapter": "ch39",
+    "file": "tutorial_code/ch39/196_新写法_·_Vue_3.5+",
+    "lang": "typescript",
+    "lines": 3,
+    "title": "新写法 · Vue 3.5+"
+  },
+  {
+    "chapter": "ch39",
+    "file": "tutorial_code/ch39/197_src_components_report_CitationMarker.vue",
+    "lang": "vue",
+    "lines": 42,
+    "title": "src/components/report/CitationMarker.vue"
+  },
+  {
+    "chapter": "ch39",
+    "file": "tutorial_code/ch39/198_src_components_report_CitationPopover.vue",
+    "lang": "vue",
+    "lines": 58,
+    "title": "src/components/report/CitationPopover.vue"
+  },
+  {
+    "chapter": "ch39",
+    "file": "tutorial_code/ch39/199_src_components_report_CitationsPanel.vue",
+    "lang": "vue",
+    "lines": 78,
+    "title": "src/components/report/CitationsPanel.vue"
+  },
+  {
+    "chapter": "ch39",
+    "file": "tutorial_code/ch39/200_src_composables_useCitations.ts",
+    "lang": "typescript",
+    "lines": 29,
+    "title": "src/composables/useCitations.ts"
+  },
+  {
+    "chapter": "ch39",
+    "file": "tutorial_code/ch39/201_三种调用方式都合法.ts",
+    "lang": "typescript",
+    "lines": 9,
+    "title": "三种调用方式都合法"
+  },
+  {
+    "chapter": "ch39",
+    "file": "tutorial_code/ch39/202_src_utils_markdown.ts",
+    "lang": "typescript",
+    "lines": 30,
+    "title": "src/utils/markdown.ts"
+  },
+  {
+    "chapter": "ch40",
+    "file": "tutorial_code/ch40/203_src_components_hitl_PlanReviewDialog.vue",
+    "lang": "vue",
+    "lines": 158,
+    "title": "src/components/hitl/PlanReviewDialog.vue"
+  },
+  {
+    "chapter": "ch40",
+    "file": "tutorial_code/ch40/204_src_components_cost_CostPanel.vue",
+    "lang": "vue",
+    "lines": 90,
+    "title": "src/components/cost/CostPanel.vue"
+  },
+  {
+    "chapter": "ch40",
+    "file": "tutorial_code/ch40/205_src_components_cost_MonthlyCostLine.vue",
+    "lang": "vue",
+    "lines": 75,
+    "title": "src/components/cost/MonthlyCostLine.vue"
+  },
+  {
+    "chapter": "ch40",
+    "file": "tutorial_code/ch40/206_src_components_cost_CostByModelPie.vue",
+    "lang": "vue",
+    "lines": 51,
+    "title": "src/components/cost/CostByModelPie.vue"
+  },
+  {
+    "chapter": "ch40",
+    "file": "tutorial_code/ch40/207_src_components_cost_CostByNodeBars.vue",
+    "lang": "vue",
+    "lines": 54,
+    "title": "src/components/cost/CostByNodeBars.vue"
+  },
+  {
+    "chapter": "ch40",
+    "file": "tutorial_code/ch40/208_src_composables_useCost.ts",
+    "lang": "typescript",
+    "lines": 49,
+    "title": "src/composables/useCost.ts"
+  },
+  {
+    "chapter": "ch40",
+    "file": "tutorial_code/ch40/209_src_stores_cost.ts",
+    "lang": "typescript",
+    "lines": 41,
+    "title": "src/stores/cost.ts"
+  },
+  {
+    "chapter": "ch40",
+    "file": "tutorial_code/ch40/210_src_pages_DashboardPage.vue",
+    "lang": "vue",
+    "lines": 36,
+    "title": "src/pages/DashboardPage.vue"
+  },
+  {
+    "chapter": "ch41",
+    "file": "tutorial_code/ch41/211_src_api_permissionApi.ts",
+    "lang": "typescript",
+    "lines": 43,
+    "title": "src/api/permissionApi.ts"
+  },
+  {
+    "chapter": "ch41",
+    "file": "tutorial_code/ch41/212_src_stores_permission.ts",
+    "lang": "typescript",
+    "lines": 43,
+    "title": "src/stores/permission.ts"
+  },
+  {
+    "chapter": "ch41",
+    "file": "tutorial_code/ch41/213_src_composables_usePermission.ts",
+    "lang": "typescript",
+    "lines": 52,
+    "title": "src/composables/usePermission.ts"
+  },
+  {
+    "chapter": "ch41",
+    "file": "tutorial_code/ch41/214_src_components_permission_PermissionDialog.vue",
+    "lang": "vue",
+    "lines": 133,
+    "title": "src/components/permission/PermissionDialog.vue"
+  },
+  {
+    "chapter": "ch41",
+    "file": "tutorial_code/ch41/215_src_components_permission_PermissionsPage.vue",
+    "lang": "vue",
+    "lines": 112,
+    "title": "src/components/permission/PermissionsPage.vue"
+  },
+  {
+    "chapter": "ch41",
+    "file": "tutorial_code/ch41/216_src_App.vue_·_在根组件挂上_Dialog.vue",
+    "lang": "vue",
+    "lines": 16,
+    "title": "src/App.vue · 在根组件挂上 Dialog"
+  },
+  {
+    "chapter": "ch42",
+    "file": "tutorial_code/ch42/217_cli_目录结构.txt",
+    "lang": "text",
+    "lines": 19,
+    "title": "cli/ 目录结构"
+  },
+  {
+    "chapter": "ch42",
+    "file": "tutorial_code/ch42/218_cli_athena_cli_app.py",
+    "lang": "python",
+    "lines": 55,
+    "title": "cli/athena_cli/app.py"
+  },
+  {
+    "chapter": "ch42",
+    "file": "tutorial_code/ch42/219_cli_athena_cli_screens_home.py",
+    "lang": "python",
+    "lines": 65,
+    "title": "cli/athena_cli/screens/home.py"
+  },
+  {
+    "chapter": "ch42",
+    "file": "tutorial_code/ch42/220_cli_athena_cli_theme.tcss",
+    "lang": "css",
+    "lines": 77,
+    "title": "cli/athena_cli/theme.tcss"
+  },
+  {
+    "chapter": "ch43",
+    "file": "tutorial_code/ch43/221_cli_athena_cli_screens_task.py",
+    "lang": "python",
+    "lines": 121,
+    "title": "cli/athena_cli/screens/task.py"
+  },
+  {
+    "chapter": "ch43",
+    "file": "tutorial_code/ch43/222_cli_athena_cli_widgets_flow_graph.py",
+    "lang": "python",
+    "lines": 68,
+    "title": "cli/athena_cli/widgets/flow_graph.py"
+  },
+  {
+    "chapter": "ch43",
+    "file": "tutorial_code/ch43/223_cli_athena_cli_widgets_stream_pane.py",
+    "lang": "python",
+    "lines": 47,
+    "title": "cli/athena_cli/widgets/stream_pane.py"
+  },
+  {
+    "chapter": "ch43",
+    "file": "tutorial_code/ch43/224_cli_athena_cli_widgets_report_view.py",
+    "lang": "python",
+    "lines": 56,
+    "title": "cli/athena_cli/widgets/report_view.py"
+  },
+  {
+    "chapter": "ch44",
+    "file": "tutorial_code/ch44/225_cli_athena_cli_main.py",
+    "lang": "python",
+    "lines": 197,
+    "title": "cli/athena_cli/main.py"
+  },
+  {
+    "chapter": "ch44",
+    "file": "tutorial_code/ch44/226_cli_athena_cli_api.py",
+    "lang": "python",
+    "lines": 95,
+    "title": "cli/athena_cli/api.py"
+  },
+  {
+    "chapter": "ch44",
+    "file": "tutorial_code/ch44/227_终端实际操作.sh",
+    "lang": "bash",
+    "lines": 49,
+    "title": "终端实际操作"
+  },
+  {
+    "chapter": "ch45",
+    "file": "tutorial_code/ch45/228_Dockerfile.backend",
+    "lang": "dockerfile",
+    "lines": 62,
+    "title": "Dockerfile.backend"
+  },
+  {
+    "chapter": "ch45",
+    "file": "tutorial_code/ch45/229_Dockerfile.web",
+    "lang": "dockerfile",
+    "lines": 33,
+    "title": "Dockerfile.web"
+  },
+  {
+    "chapter": "ch45",
+    "file": "tutorial_code/ch45/230_docker-compose.yml",
+    "lang": "yaml",
+    "lines": 81,
+    "title": "docker-compose.yml"
+  },
+  {
+    "chapter": "ch45",
+    "file": "tutorial_code/ch45/231_k8s_backend-deployment.yaml(节选)",
+    "lang": "yaml",
+    "lines": 47,
+    "title": "k8s/backend-deployment.yaml(节选)"
+  },
+  {
+    "chapter": "ch45",
+    "file": "tutorial_code/ch45/232_src_athena_api_main.py(节选)·_lifespan_中加优雅停机.py",
+    "lang": "python",
+    "lines": 22,
+    "title": "src/athena/api/main.py(节选)· lifespan 中加优雅停机"
+  },
+  {
+    "chapter": "ch46",
+    "file": "tutorial_code/ch46/233_tests_load_locustfile.py",
+    "lang": "python",
+    "lines": 73,
+    "title": "tests/load/locustfile.py"
+  },
+  {
+    "chapter": "ch46",
+    "file": "tutorial_code/ch46/234_压测命令.sh",
+    "lang": "bash",
+    "lines": 8,
+    "title": "压测命令"
+  },
+  {
+    "chapter": "appendix-a",
+    "file": "tutorial_code/appendix-a/235_最常用的_imports.py",
+    "lang": "python",
+    "lines": 30,
+    "title": "最常用的 imports"
+  },
+  {
+    "chapter": "appendix-a",
+    "file": "tutorial_code/appendix-a/236_90%_的图都长这样.py",
+    "lang": "python",
+    "lines": 23,
+    "title": "90% 的图都长这样"
+  },
+  {
+    "chapter": "appendix-a",
+    "file": "tutorial_code/appendix-a/237_conditional_routing_patterns.py",
+    "lang": "python",
+    "lines": 21,
+    "title": "conditional routing patterns"
+  },
+  {
+    "chapter": "appendix-a",
+    "file": "tutorial_code/appendix-a/238_snippet_238.py",
+    "lang": "python",
+    "lines": 18,
+    "title": "snippet_238"
+  },
+  {
+    "chapter": "appendix-a",
+    "file": "tutorial_code/appendix-a/239_snippet_239.py",
+    "lang": "python",
+    "lines": 12,
+    "title": "snippet_239"
+  },
+  {
+    "chapter": "appendix-a",
+    "file": "tutorial_code/appendix-a/240_snippet_240.py",
+    "lang": "python",
+    "lines": 21,
+    "title": "snippet_240"
+  },
+  {
+    "chapter": "appendix-a",
+    "file": "tutorial_code/appendix-a/241_snippet_241.py",
+    "lang": "python",
+    "lines": 17,
+    "title": "snippet_241"
+  },
+  {
+    "chapter": "appendix-b",
+    "file": "tutorial_code/appendix-b/242_chatbot.py",
+    "lang": "python",
+    "lines": 20,
+    "title": "chatbot.py"
+  },
+  {
+    "chapter": "appendix-b",
+    "file": "tutorial_code/appendix-b/243_react_agent_with_tools.py",
+    "lang": "python",
+    "lines": 25,
+    "title": "react_agent_with_tools.py"
+  },
+  {
+    "chapter": "appendix-b",
+    "file": "tutorial_code/appendix-b/244_plan_execute.py",
+    "lang": "python",
+    "lines": 59,
+    "title": "plan_execute.py"
+  },
+  {
+    "chapter": "appendix-b",
+    "file": "tutorial_code/appendix-b/245_rag_agent.py",
+    "lang": "python",
+    "lines": 33,
+    "title": "rag_agent.py"
+  },
+  {
+    "chapter": "appendix-b",
+    "file": "tutorial_code/appendix-b/246_hitl_critical_action.py",
+    "lang": "python",
+    "lines": 52,
+    "title": "hitl_critical_action.py"
+  },
+  {
+    "chapter": "appendix-b",
+    "file": "tutorial_code/appendix-b/247_parallel_fanout.py",
+    "lang": "python",
+    "lines": 39,
+    "title": "parallel_fanout.py"
+  },
+  {
+    "chapter": "appendix-b",
+    "file": "tutorial_code/appendix-b/248_fallback_pattern.py",
+    "lang": "python",
+    "lines": 20,
+    "title": "fallback_pattern.py"
+  }
+]

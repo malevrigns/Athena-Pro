@@ -1,0 +1,44 @@
+"""Session 业务逻辑"""
+from __future__ import annotations
+import uuid
+from datetime import datetime, timezone, timedelta
+from sqlalchemy import select, desc, func
+
+from athena.store.models import Session, Task
+from athena.observability import logger
+
+
+class SessionService:
+    """Session 的 CRUD + 业务规则。注入 SQLAlchemy AsyncSession 使用。"""
+    
+    def __init__(self, db):
+        self.db = db
+    
+    async def start_session(self, user_id: str) -> str:
+        """开一个新 session(或复用最近的活跃 session)。"""
+        # 找最近 30 分钟内的活跃 session,复用
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
+        stmt = (
+            select(Session)
+            .where(Session.user_id == user_id, Session.ended_at.is_(None),
+                   Session.last_active_at >= cutoff)
+            .order_by(desc(Session.last_active_at))
+            .limit(1)
+        )
+        existing = (await self.db.execute(stmt)).scalar_one_or_none()
+        if existing:
+            return existing.session_id
+        
+        # 否则新建
+        session_id = f"sess-{uuid.uuid4().hex[:16]}"
+        self.db.add(Session(session_id=session_id, user_id=user_id))
+        await self.db.commit()
+        logger.info("session_created", session_id=session_id, user_id=user_id)
+        return session_id
+    
+    async def end_session(self, session_id: str) -> None:
+        """显式结束,后续不再 resume(用户登出 / 主动清理)。"""
+        s = await self.db.get(Session, session_id)
+        if s:
+            s.ended_at = datetime.now(timezone.utc)
+            await self.db.commit()

@@ -1,0 +1,21 @@
+# 2026 年大模型 Agent 框架的发展现状
+
+## 概述
+2026 年的 Agent 框架生态进入"工业化"阶段。LangGraph、AutoGen、CrewAI
+形成三足鼎立,Klarna、Uber、Replit 等公司已在生产环境部署 [1][2]。
+
+## 主流框架对比
+LangGraph 1.0 于 2025 年 10 月 GA [3],主打"状态机模型"和持久化能力,
+Anthropic 内部多个 agent 系统基于其构建 [4]。AutoGen 0.4 在 2025 年底
+重写为 actor 模型架构 [5],主打多 agent 异步消息传递 ...
+
+## 关键洞察
+1. "可观测性"已成框架核心竞争力(LangSmith 集成是 LangGraph 杀手锏)[1][3]
+2. 生产部署对"状态持久化"的需求超越"功能丰富度"[2][6]
+3. 三大框架 2026 年都在向 OTel 标准靠拢,可观测性走向统一 [7]
+
+## 来源
+[1] [LangChain Blog: Production Agents at Klarna](https://blog.langchain.com/...)
+[2] [Uber Engineering: Agent Pipelines](https://eng.uber.com/...)
+[3] [LangGraph 1.0 GA Announcement](https://changelog.langchain.com/...)
+...

@@ -1,0 +1,1 @@
+from pydantic import BaseSettings   # ← 报错

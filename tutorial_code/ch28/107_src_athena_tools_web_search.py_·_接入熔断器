@@ -1,0 +1,12 @@
+async def web_search_with_breaker(query: str) -> list[dict]:
+    """带熔断保护的 Tavily 搜索。"""
+    
+    async def _real_call():
+        return await _tavily.asearch(query)
+    
+    async def _fallback():
+        """Tavily 挂了,降级到 DuckDuckGo + 缓存。"""
+        logger.warning("falling_back_to_ddg", query=query)
+        return await _duckduckgo_search(query)
+    
+    return await tavily_breaker.call(_real_call, fallback=_fallback)

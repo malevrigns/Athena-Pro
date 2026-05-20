@@ -1,0 +1,118 @@
+"""
+ch13 · Handoff Tool · 完整 demo
+场景:客户支持 swarm
+  - GeneralAgent: 通用客服,接所有问题
+  - TechAgent:   技术问题专家
+  - BillingAgent: 财务/订单问题专家
+
+每个 agent 自带 handoff_to_xxx 工具,在发现"这不是我的领域"时主动交接。
+
+运行前确保 export OPENAI_API_KEY=sk-...
+"""
+from typing import Annotated, Literal
+from langchain_core.messages import ToolMessage
+from langchain_core.tools import tool, InjectedToolCallId
+from langchain_openai import ChatOpenAI
+from langgraph.graph import StateGraph, START, END, MessagesState
+from langgraph.prebuilt import InjectedState, create_react_agent
+from langgraph.types import Command
+
+
+# ---------- Handoff 工具工厂 ----------
+def create_handoff_tool(target_agent_name: str, description: str):
+    """生成一个 'handoff to X' 工具,X 是目标 agent 名"""
+    
+    @tool(f"transfer_to_{target_agent_name}", description=description)
+    def handoff_tool(
+        # 注入参数(LLM 看不到这些,框架自动塞进去)
+        state: Annotated[dict, InjectedState],
+        tool_call_id: Annotated[str, InjectedToolCallId],
+    ) -> Command:
+        # 构造一条 ToolMessage 让 LLM 上下文里知道"我转交了"
+        tool_msg = ToolMessage(
+            content=f"已转给 {target_agent_name},请等待该 agent 处理。",
+            name=f"transfer_to_{target_agent_name}",
+            tool_call_id=tool_call_id,
+        )
+        # Command:跳到目标 agent + 把当前 messages + tool_msg 一起传过去
+        return Command(
+            goto=target_agent_name,
+            update={"messages": state["messages"] + [tool_msg]},
+            graph=Command.PARENT,   # 跳出当前 ReAct 子图
+        )
+    
+    return handoff_tool
+
+
+# ---------- 三个 Agent ----------
+llm = ChatOpenAI(model="gpt-4o-mini")
+
+# General 客服:会 handoff 给 tech / billing
+general_agent = create_react_agent(
+    model=llm,
+    tools=[
+        create_handoff_tool("tech_agent", "用户问的是技术问题(bug、登录、功能不工作),转给技术专家"),
+        create_handoff_tool("billing_agent", "用户问的是订单、付款、退款,转给财务"),
+    ],
+    prompt=(
+        "你是通用客服。\n"
+        "- 用户问的是技术问题 → 调用 transfer_to_tech_agent\n"
+        "- 用户问的是订单/付款 → 调用 transfer_to_billing_agent\n"
+        "- 其他普通问候、感谢、闲聊 → 你自己回复"
+    ),
+    name="general_agent",
+)
+
+# Tech agent
+tech_agent = create_react_agent(
+    model=llm,
+    tools=[create_handoff_tool("general_agent", "问题不是技术问题,转回通用客服")],
+    prompt=(
+        "你是技术支持专家,专门解决登录失败、bug、功能异常等技术问题。\n"
+        "如果发现不是技术问题,调用 transfer_to_general_agent。\n"
+        "否则直接给出技术建议。"
+    ),
+    name="tech_agent",
+)
+
+# Billing agent
+billing_agent = create_react_agent(
+    model=llm,
+    tools=[create_handoff_tool("general_agent", "问题不是订单/财务问题,转回通用客服")],
+    prompt=(
+        "你是财务专家,负责订单查询、退款政策、付款方式相关问题。\n"
+        "如果发现不是财务问题,调用 transfer_to_general_agent。\n"
+        "否则直接处理。"
+    ),
+    name="billing_agent",
+)
+
+
+# ---------- 建顶层图 ----------
+builder = StateGraph(MessagesState)
+builder.add_node("general_agent", general_agent)
+builder.add_node("tech_agent", tech_agent)
+builder.add_node("billing_agent", billing_agent)
+
+# 入口是 general_agent
+builder.add_edge(START, "general_agent")
+
+graph = builder.compile()
+
+
+# ---------- 跑起来 ----------
+def ask(question: str):
+    print(f"\n{'='*60}\n👤 用户: {question}\n{'='*60}")
+    result = graph.invoke({"messages": [{"role": "user", "content": question}]})
+    # 找到最后一条 ai 回复
+    for msg in reversed(result["messages"]):
+        if hasattr(msg, "content") and msg.content and msg.__class__.__name__ == "AIMessage":
+            # 看是哪个 agent 回的(从 metadata 找,简化版直接打)
+            print(f"🤖 [Agent]: {msg.content[:200]}")
+            break
+
+
+if __name__ == "__main__":
+    ask("你们好,我登录不上去,提示密码错误但我确认密码是对的")
+    ask("我想知道上个月的订单 #12345 能不能退款")
+    ask("你们 logo 真好看")

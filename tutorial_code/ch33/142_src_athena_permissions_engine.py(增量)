@@ -1,0 +1,14 @@
+async def check_permission(tool_name: str, args: dict, session_id: str) -> Decision:
+    # 1) MCP 工具的策略,从 manager 拿
+    if "__" in tool_name:                        # MCP 工具的命名规则
+        mcp = await get_mcp_manager()
+        policy = mcp.get_permission_policy(tool_name)
+        if policy == "auto_approve":
+            return Decision.ALLOW
+        if policy == "deny":
+            return Decision.DENY
+        # ask / ask_for_writes 走交互流程
+        return await _ask_user(tool_name, args, session_id)
+    
+    # 2) 本地工具走原有逻辑
+    return _check_local(tool_name, args, session_id)

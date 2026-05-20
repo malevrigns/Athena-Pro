@@ -1,0 +1,44 @@
+"""
+MCP 客户端 · stdio 传输实现
+
+设计要点:
+- 每个 server 独立子进程,生命周期跟随 Athena
+- JSON-RPC 走 stdin/stdout(stderr 给日志)
+- 异步 IO,支持并发调用
+- 失败时自动重启 server(crash-only design)
+"""
+from __future__ import annotations
+import asyncio
+import json
+import os
+import uuid
+from dataclasses import dataclass, field
+from typing import Any
+
+from athena.observability import logger
+
+
+@dataclass
+class MCPServerConfig:
+    name: str
+    transport: str                          # "stdio" | "sse"
+    command: str | None = None              # stdio: 启动命令
+    args: list[str] = field(default_factory=list)
+    env: dict[str, str] = field(default_factory=dict)
+    url: str | None = None                  # sse: 连接地址
+    headers: dict[str, str] = field(default_factory=dict)
+    permission_policy: str = "ask"
+
+
+@dataclass
+class MCPTool:
+    """从 server 拿到的一个工具定义。"""
+    server: str
+    name: str
+    description: str
+    input_schema: dict                       # JSON Schema
+    
+    @property
+    def qualified_name(self) -> str:
+        """带 server 前缀,避免不同 server 工具重名。"""
+        return f"{self.server}__{self.name}"

@@ -1,0 +1,68 @@
+web/
+├── src/
+│   ├── main.ts                       # 应用入口,装载 Vue + Pinia + Router + Naive UI
+│   ├── App.vue                       # 根组件,只放 RouterView
+│   │
+│   ├── router/
+│   │   └── index.ts                  # 路由配置,懒加载所有页面
+│   │
+│   ├── stores/                       # Pinia stores
+│   │   ├── session.ts                # 当前 session、preferences、cost
+│   │   ├── task.ts                   # 当前任务的实时状态(流式 UI 用)
+│   │   └── permission.ts             # 待审批的权限请求
+│   │
+│   ├── composables/                  # 可复用的 Composition API 函数
+│   │   ├── useApi.ts                 # API 客户端封装
+│   │   ├── useEventStream.ts         # SSE 流接 reactive state
+│   │   ├── useWebSocketCommands.ts   # WS 中途打断 / 审批回传
+│   │   └── useToast.ts               # 全局 toast 提示
+│   │
+│   ├── types/                        # 全局类型 + zod schema
+│   │   ├── api.ts                    # 与后端 Pydantic 对齐的 schema
+│   │   └── events.ts                 # SSE 事件类型(discriminated union)
+│   │
+│   ├── views/                        # 页面级组件(每个 Route 一个文件)
+│   │   ├── HomeView.vue              # 首页 · 新建任务
+│   │   ├── TaskView.vue              # 任务运行屏
+│   │   ├── HistoryView.vue           # 历史会话列表
+│   │   ├── DashboardView.vue         # 成本仪表盘
+│   │   └── SettingsView.vue          # 偏好与权限管理
+│   │
+│   ├── components/                   # 可复用业务组件
+│   │   ├── layout/
+│   │   │   ├── AppLayout.vue         # 主框架 · 侧栏 + topbar + 主内容
+│   │   │   └── SidebarNav.vue
+│   │   ├── task/
+│   │   │   ├── NewTaskForm.vue       # 新建任务表单
+│   │   │   ├── TaskStream.vue        # 任务运行容器(组合下面 4 个)
+│   │   │   ├── FlowGraph.vue         # 节点拓扑图(SVG)
+│   │   │   ├── ThinkingPane.vue      # 打字机思考区
+│   │   │   ├── StopButton.vue        # 停止按钮(WS interrupt)
+│   │   │   └── CostPanel.vue         # 实时成本面板
+│   │   ├── report/
+│   │   │   ├── ReportRenderer.vue    # Markdown + 引用气泡
+│   │   │   ├── CitationPopover.vue   # 引用 hover 弹窗
+│   │   │   └── CitationsPanel.vue    # 右侧引用列表
+│   │   ├── hitl/
+│   │   │   └── PlanReviewModal.vue   # 计划审核对话框
+│   │   ├── permission/
+│   │   │   └── PermissionModal.vue   # 工具批准弹窗
+│   │   └── cost/
+│   │       ├── MonthlyCostChart.vue
+│   │       ├── CostByModelChart.vue
+│   │       └── CostByNodeChart.vue
+│   │
+│   ├── styles/
+│   │   ├── main.css                  # Tailwind 入口
+│   │   └── theme.ts                  # Naive UI theme overrides
+│   │
+│   └── utils/
+│       ├── format.ts                 # 时间 / 货币 / 数字格式化
+│       └── http.ts                   # fetch wrapper(认证 / 错误处理)
+│
+├── public/                           # 静态资源
+├── index.html                        # Vite 入口 HTML
+├── vite.config.ts
+├── tsconfig.json
+├── tailwind.config.ts
+└── package.json

@@ -1,0 +1,32 @@
+.PHONY: install dev test lint type docker-up docker-down
+
+install:
+	uv sync --all-extras
+
+dev:
+	uv run uvicorn athena.api.main:app --reload --port 8000
+
+test:
+	uv run pytest
+
+lint:
+	uv run ruff check src tests
+	uv run ruff format --check src tests
+
+type:
+	uv run mypy src
+
+eval:
+	uv run python -m tests.eval.run_eval
+
+load:
+	uv run locust -f tests/load/locustfile.py
+
+docker-up:
+	docker compose up -d
+
+docker-down:
+	docker compose down
+
+clean:
+	rm -rf .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage

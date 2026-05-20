@@ -1,0 +1,1 @@
+from pydantic_settings import BaseSettings, SettingsConfigDict   # 独立 pip 包

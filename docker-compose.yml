@@ -1,0 +1,60 @@
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: athena-pro/api:5.0.0
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ATHENA_ENV: ${ATHENA_ENV:-prod}
+      ATHENA_DATA_DIR: /data
+      ATHENA_API_KEY: ${ATHENA_API_KEY}
+      ATHENA_REQUIRE_AUTH: ${ATHENA_REQUIRE_AUTH:-true}
+      ATHENA_LLM_PROVIDER: ${ATHENA_LLM_PROVIDER:-mock}
+      ATHENA_DEFAULT_MODEL: ${ATHENA_DEFAULT_MODEL:-gpt-4o-mini}
+      ATHENA_OPENAI_API_KEY: ${ATHENA_OPENAI_API_KEY:-}
+      ATHENA_ANTHROPIC_API_KEY: ${ATHENA_ANTHROPIC_API_KEY:-}
+      ATHENA_DEEPSEEK_API_KEY: ${ATHENA_DEEPSEEK_API_KEY:-}
+      ATHENA_OPENROUTER_API_KEY: ${ATHENA_OPENROUTER_API_KEY:-}
+      ATHENA_SEARCH_PROVIDER: ${ATHENA_SEARCH_PROVIDER:-mock}
+      ATHENA_TAVILY_API_KEY: ${ATHENA_TAVILY_API_KEY:-}
+      ATHENA_QUALITY_THRESHOLD: ${ATHENA_QUALITY_THRESHOLD:-0.7}
+      ATHENA_MAX_RESEARCH_ITERATIONS: ${ATHENA_MAX_RESEARCH_ITERATIONS:-2}
+      ATHENA_MAX_BUDGET_USD: ${ATHENA_MAX_BUDGET_USD:-5}
+      ATHENA_HARD_TIMEOUT_SEC: ${ATHENA_HARD_TIMEOUT_SEC:-600}
+      ATHENA_RATE_LIMIT_PER_MINUTE: ${ATHENA_RATE_LIMIT_PER_MINUTE:-30}
+      ATHENA_LOG_LEVEL: ${ATHENA_LOG_LEVEL:-INFO}
+    volumes:
+      - athena-data:/data
+    expose:
+      - "8000"
+    ports:
+      - "${ATHENA_API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: athena-pro/web:5.0.0
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${ATHENA_WEB_PORT:-5173}:80"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  athena-data:

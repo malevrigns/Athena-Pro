@@ -1,0 +1,9 @@
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    configure_observability()
+    async with lifespan_pg():
+        mcp = await get_mcp_manager()                # 启动所有 MCP server
+        app.state.mcp = mcp
+        app.state.graph = await build_main_graph()
+        yield
+        await mcp.stop_all()

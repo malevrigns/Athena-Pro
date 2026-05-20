@@ -1,0 +1,118 @@
+"""
+ch11 · Command 对象 · 完整 demo
+场景:写文章 → 评估 → 不够好就回去重写,够好就输出
+
+Command 的核心价值:在评估节点内既更新 score 又决定下一步去哪。
+
+运行前确保 export OPENAI_API_KEY=sk-...
+"""
+from typing import Annotated, TypedDict, Literal
+from langchain_openai import ChatOpenAI
+from langgraph.graph import StateGraph, START, END
+from langgraph.types import Command
+
+
+# ---------- State ----------
+class State(TypedDict):
+    topic: str
+    draft: str
+    score: float
+    feedback: str
+    revision_count: int
+
+
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
+
+
+# ---------- 节点 ----------
+def write_node(state: State):
+    """根据 topic + feedback 写 draft"""
+    feedback_hint = ""
+    if state.get("feedback"):
+        feedback_hint = f"\n上次评审意见:{state['feedback']}\n请针对性改进。"
+    
+    resp = llm.invoke([
+        {"role": "system", "content": "你是一个简洁的写作助手。"},
+        {"role": "user", "content": f"写一段 80 字左右介绍 '{state['topic']}'。{feedback_hint}"},
+    ])
+    return {
+        "draft": resp.content,
+        "revision_count": state.get("revision_count", 0) + 1,
+    }
+
+
+def evaluate_node(state: State) -> Command[Literal["write", "publish"]]:
+    """
+    评估 draft:
+    - 用 Command 同时更新 score + feedback
+    - 同时决定:够好就 publish,不够好回去 write
+    """
+    # 设置 max revisions 防止无限循环
+    if state["revision_count"] >= 3:
+        return Command(
+            update={"score": 0.0, "feedback": "达到最大修订次数,强制发布"},
+            goto="publish",
+        )
+    
+    resp = llm.invoke([
+        {"role": "system", "content": (
+            "你是严格的内容评估员。给下面这段文字打分(0-1 浮点),并给一句改进建议。"
+            "严格按格式输出:SCORE: 0.85\\nFEEDBACK: 这里给意见"
+        )},
+        {"role": "user", "content": state["draft"]},
+    ])
+    
+    # 解析(简化版,生产应该用结构化输出)
+    text = resp.content
+    score = 0.0
+    feedback = ""
+    for line in text.split("\n"):
+        if line.startswith("SCORE:"):
+            try: score = float(line.replace("SCORE:", "").strip())
+            except: pass
+        elif line.startswith("FEEDBACK:"):
+            feedback = line.replace("FEEDBACK:", "").strip()
+    
+    print(f"  [评估] 第 {state['revision_count']} 版 score = {score:.2f}")
+    print(f"  [评估] {feedback}")
+    
+    # ✨ Command 的精髓:在这里同时做"更新数据"和"决定下一步"
+    if score >= 0.8:
+        return Command(
+            update={"score": score, "feedback": feedback},
+            goto="publish",
+        )
+    else:
+        return Command(
+            update={"score": score, "feedback": feedback},
+            goto="write",
+        )
+
+
+def publish_node(state: State):
+    """发布最终版本"""
+    print("\n" + "=" * 60)
+    print(f"📝 最终发布(第 {state['revision_count']} 版,score={state['score']:.2f})")
+    print("=" * 60)
+    print(state["draft"])
+    return {}
+
+
+# ---------- 建图 ----------
+builder = StateGraph(State)
+builder.add_node("write", write_node)
+builder.add_node("evaluate", evaluate_node)
+builder.add_node("publish", publish_node)
+
+builder.add_edge(START, "write")
+builder.add_edge("write", "evaluate")
+# 关键:evaluate 节点用 Command 自己决定去 write 还是 publish
+# 所以不需要 add_conditional_edges
+builder.add_edge("publish", END)
+
+graph = builder.compile()
+
+
+# ---------- 跑起来 ----------
+if __name__ == "__main__":
+    graph.invoke({"topic": "LangGraph 是什么", "revision_count": 0})

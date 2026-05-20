@@ -1,0 +1,41 @@
+name: test
+on: [pull_request]
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install -e ".[dev]"
+      - run: pytest tests/unit -v --cov=athena
+  
+  integration:
+    runs-on: ubuntu-latest
+    needs: unit
+    services:
+      postgres:
+        image: postgres:16
+        env: {POSTGRES_PASSWORD: test}
+        ports: ["5432:5432"]
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY_TEST }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_TEST }}
+      POSTGRES_DSN: postgresql://postgres:test@localhost/test
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -e ".[dev]"
+      - run: pytest tests/integration -v -m integration
+  
+  eval:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    # 只在非草稿 PR 跑(贵)
+    needs: integration
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -e ".[dev]"
+      - run: python tests/eval/run_eval.py
+      - uses: actions/upload-artifact@v4
+        with: {name: eval-results, path: eval_results.json}

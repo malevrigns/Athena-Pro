@@ -1,0 +1,19 @@
+cli/
+├── athena_cli/
+│   ├── __init__.py
+│   ├── main.py                # 入口 + click 解析
+│   ├── app.py                 # AthenaApp(主 Textual App)
+│   ├── screens/
+│   │   ├── home.py            # 输入问题的首屏
+│   │   ├── task.py            # 运行中的任务屏(节点流程 + 流式输出)
+│   │   ├── history.py         # 历史 task 列表 + /resume
+│   │   └── permission.py      # 工具批准 modal
+│   ├── widgets/
+│   │   ├── flow_graph.py      # ASCII 节点流程图
+│   │   ├── stream_pane.py     # 流式 token 显示区
+│   │   ├── cost_bar.py        # 底部 cost 条
+│   │   └── report_view.py     # 报告 Markdown 渲染
+│   ├── api.py                 # 调用后端 HTTP + SSE
+│   └── theme.tcss             # 整体配色
+├── pyproject.toml
+└── README.md

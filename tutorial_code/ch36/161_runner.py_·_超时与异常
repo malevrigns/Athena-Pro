@@ -1,0 +1,23 @@
+    try:
+        await asyncio.wait_for(_run(), timeout=timeout_sec)
+    
+    except asyncio.TimeoutError:
+        logger.warning("subagent_timeout", timeout=timeout_sec)
+        return f"⏱️ Subagent 超时({timeout_sec}s),未完成。已有信息:{_extract_last(last_ai_msg)}"
+    except Exception as e:
+        logger.exception("subagent_failed", error=str(e))
+        return f"❌ Subagent 失败:{type(e).__name__}: {e}"
+    
+    if last_ai_msg is None:
+        return "⚠️ Subagent 没产出任何输出"
+    
+    return _extract_last(last_ai_msg)
+
+
+def _extract_last(msg) -> str:
+    """从 AIMessage 提取文本内容(忽略 tool_calls)。"""
+    if msg is None:
+        return ""
+    if hasattr(msg, "content") and isinstance(msg.content, str):
+        return msg.content
+    return str(msg)

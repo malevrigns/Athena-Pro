@@ -1,0 +1,3 @@
+const bodyRef = ref<HTMLElement | null>(null)
+// template 里 <article :ref="bodyRef"> ❌ 这种写法不对
+// 必须 <article ref="bodyRef"> 然后 bodyRef.value 才是 DOM

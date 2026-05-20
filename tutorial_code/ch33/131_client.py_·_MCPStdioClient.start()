@@ -1,0 +1,56 @@
+class MCPStdioClient:
+    """通过 stdio 与一个 MCP server 通信。"""
+    
+    def __init__(self, config: MCPServerConfig):
+        self.config = config
+        self.proc: asyncio.subprocess.Process | None = None
+        self.pending: dict[str, asyncio.Future] = {}      # msg_id → 等响应的 future
+        self._reader_task: asyncio.Task | None = None
+        self._initialized = False
+        self.tools: list[MCPTool] = []
+    
+    async def start(self) -> None:
+        """启动子进程,执行 initialize 握手,拉取工具列表。"""
+        # 1) 解析环境变量:把 "${GITHUB_TOKEN}" 这种占位符替换成真实值
+        env = {**os.environ}
+        for k, v in self.config.env.items():
+            env[k] = os.path.expandvars(v)
+        
+        # 2) spawn 子进程,三个管道全开
+        self.proc = await asyncio.create_subprocess_exec(
+            self.config.command, *self.config.args,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+        )
+        logger.info("mcp_server_started", server=self.config.name, pid=self.proc.pid)
+        
+        # 3) 启动两个后台读循环:stdout 收消息、stderr 收日志
+        self._reader_task = asyncio.create_task(self._read_loop())
+        asyncio.create_task(self._stderr_loop())
+        
+        # 4) 协议握手:发 initialize,等回执
+        result = await self._request("initialize", {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {"name": "athena", "version": "1.0.0"},
+        })
+        logger.info("mcp_initialized", server=self.config.name,
+                    server_info=result.get("serverInfo"))
+        
+        # 5) 协议要求:握手完成后发一个 "initialized" 通知(无响应)
+        await self._notify("notifications/initialized", {})
+        
+        # 6) 拉工具列表
+        list_result = await self._request("tools/list", {})
+        for t in list_result.get("tools", []):
+            self.tools.append(MCPTool(
+                server=self.config.name,
+                name=t["name"],
+                description=t.get("description", ""),
+                input_schema=t.get("inputSchema", {"type": "object"}),
+            ))
+        
+        self._initialized = True
+        logger.info("mcp_tools_loaded", server=self.config.name, count=len(self.tools))

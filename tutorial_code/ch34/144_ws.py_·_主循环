@@ -1,0 +1,60 @@
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                await websocket.send_json({"type": "error", "error": "invalid_json"})
+                continue
+            
+            action = msg.get("type")
+            task_id = msg.get("task_id")
+            
+            if action == "subscribe" and task_id:
+                # 取消已有订阅(避免一个 ws 同时订阅同一任务两次)
+                if existing := streaming_tasks.get(task_id):
+                    existing.cancel()
+                
+                cancel_event = asyncio.Event()
+                session_tasks[task_id] = cancel_event
+                streaming_tasks[task_id] = asyncio.create_task(
+                    _stream_to_ws(websocket, task_id, cancel_event)
+                )
+            
+            elif action == "interrupt" and task_id:
+                # 1) 设置 cancel event,通知 stream 协程停止推送
+                if event := session_tasks.get(task_id):
+                    event.set()
+                # 2) 调 graph 的中断 API(下面定义)
+                from athena.api.main import _app_state
+                await interrupt_running_graph(_app_state.graph, task_id)
+                await websocket.send_json({
+                    "type": "interrupt_ack",
+                    "task_id": task_id,
+                })
+            
+            elif action == "approve" and task_id:
+                from langgraph.types import Command
+                config = {"configurable": {"thread_id": task_id}}
+                from athena.api.main import _app_state
+                # 非阻塞,让 stream 协程把后续事件推过去
+                asyncio.create_task(
+                    _app_state.graph.ainvoke(
+                        Command(resume=msg.get("decision", {})),
+                        config=config,
+                    )
+                )
+                await websocket.send_json({"type": "approve_ack", "task_id": task_id})
+            
+            else:
+                await websocket.send_json({
+                    "type": "error",
+                    "error": f"unknown_action: {action}",
+                })
+    
+    except WebSocketDisconnect:
+        logger.info("ws_disconnected")
+    finally:
+        # 清理所有订阅
+        for t in streaming_tasks.values():
+            t.cancel()

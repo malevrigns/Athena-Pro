@@ -1,0 +1,28 @@
+# Athena 沙箱镜像
+# 设计原则:小、无 root、预装常用库、无 ssh / curl 等扩散工具
+FROM python:3.11-slim AS base
+
+# 装最少必要的工具:基本 shell 命令 + 编译 numpy/pandas 的依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# 预装数据/科学计算常用库(避免每次 sandbox 启动都装)
+COPY requirements-sandbox.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt && \
+    rm /tmp/requirements.txt
+
+# 非 root 用户
+RUN groupadd -r sandbox && useradd -r -g sandbox -u 1000 -m -d /home/sandbox sandbox
+
+# 工作目录
+WORKDIR /workspace
+RUN chown -R sandbox:sandbox /workspace
+
+# 不开 ssh,不暴露端口,默认不 root
+USER sandbox
+
+# 默认命令(可被覆盖)
+CMD ["python", "-c", "print('athena-sandbox ready')"]

@@ -1,0 +1,77 @@
+/* Athena CLI · 暖色调主题 */
+
+App {
+    background: #faf6ed;
+    color: #1a1815;
+}
+
+Header {
+    background: #1a1815;
+    color: #faf6ed;
+}
+
+Footer {
+    background: #2a2622;
+    color: #d4ccbd;
+}
+
+#welcome {
+    color: #b54c1e;
+    text-style: bold;
+    margin-bottom: 2;
+}
+
+#home-box {
+    width: 80;
+    height: auto;
+    padding: 2 4;
+}
+
+#question-input {
+    height: 8;
+    margin: 1 0;
+    background: #fff8e8;
+    color: #1a1815;
+    border: round #b54c1e;
+    padding: 1 2;
+}
+
+#question-input:focus {
+    border: round #d4691c;
+}
+
+#submit-btn {
+    margin-top: 2;
+    min-width: 24;
+}
+
+#submit-btn:hover {
+    background: #b54c1e;
+}
+
+/* 节点流程图节点状态 */
+.node-pending  { color: #a8a094; }
+.node-running  { color: #d4691c; text-style: bold blink; }
+.node-done     { color: #5a8a3f; text-style: bold; }
+.node-failed   { color: #c84545; text-style: bold; }
+
+/* 流式输出区 */
+StreamPane {
+    background: #fdf9ee;
+    border: round #d4ccbd;
+    padding: 1 2;
+    overflow-y: scroll;
+}
+
+StreamPane > .running-cursor {
+    color: #d4691c;
+    text-style: blink;
+}
+
+/* Cost bar */
+CostBar {
+    height: 3;
+    background: #2a2622;
+    color: #d4ccbd;
+    padding: 0 2;
+}

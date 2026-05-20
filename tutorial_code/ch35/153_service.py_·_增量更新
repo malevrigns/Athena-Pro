@@ -1,0 +1,13 @@
+    async def add_task(self, session_id: str, task_id: str, question: str) -> None:
+        self.db.add(Task(task_id=task_id, session_id=session_id, question=question))
+        await self.db.commit()
+    
+    async def update_preferences(self, session_id: str, updates: dict) -> None:
+        """合并(不覆盖)用户偏好。"""
+        s = await self.db.get(Session, session_id)
+        if not s:
+            return
+        prefs = dict(s.preferences or {})
+        prefs.update(updates)
+        s.preferences = prefs
+        await self.db.commit()

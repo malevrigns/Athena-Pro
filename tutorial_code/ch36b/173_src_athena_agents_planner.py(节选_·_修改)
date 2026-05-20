@@ -1,0 +1,16 @@
+from athena.memory.injector import inject_memory_into_prompt
+
+async def planner_node(state: ResearchState) -> Command:
+    question = state["messages"][0].content
+    
+    # ← 新增:任务启动前注入历史教训
+    memory_text = await inject_memory_into_prompt(question)
+    
+    system_prompt = PLANNER_BASE_PROMPT
+    if memory_text:
+        # 插在 role 之后、具体任务之前
+        system_prompt = system_prompt + memory_text
+    
+    # 后续 LLM 调用照常
+    response = await llm.ainvoke([...])
+    ...

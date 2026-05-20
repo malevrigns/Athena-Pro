@@ -1,0 +1,43 @@
+SUBAGENT_REGISTRY: dict[str, SubagentSpec] = {
+    "web_researcher": SubagentSpec(
+        name="web_researcher",
+        system_prompt=(
+            "你是一个专注的网络研究员。\n"
+            "- 接到任务 → 决定搜索策略 → 执行搜索 → 验证来源 → 提炼答案\n"
+            "- 输出格式:【结论】... 【依据】1. ... 2. ...\n"
+            "- 不要执行任务以外的内容,做完就停"
+        ),
+        tools_factory=_web_researcher_tools,
+        model="gpt-4o-mini",
+    ),
+    "fact_checker": SubagentSpec(
+        name="fact_checker",
+        system_prompt=(
+            "你是事实核查员。对给定声明,判断其真假。\n"
+            "- 必须找到至少 2 个独立来源\n"
+            "- 输出:【判断】TRUE/FALSE/UNCLEAR 【证据】..."
+        ),
+        tools_factory=_fact_checker_tools,
+        model="gpt-4o-mini",
+    ),
+    "code_runner": SubagentSpec(
+        name="code_runner",
+        system_prompt=(
+            "你是 Python 计算助手。给定数据或公式,写代码计算结果。\n"
+            "- 一次性写完整代码,不要多轮试错\n"
+            "- 输出:【代码】... 【结果】..."
+        ),
+        tools_factory=_code_runner_tools,
+        model="gpt-4o-mini",
+    ),
+    "doc_reader": SubagentSpec(
+        name="doc_reader",
+        system_prompt=(
+            "你是文档阅读员。给定 URL 或 PDF,提取要求的信息。\n"
+            "- 不发挥,只摘录\n"
+            "- 输出:【原文片段】... 【位置】页 X / 章 Y"
+        ),
+        tools_factory=_doc_reader_tools,
+        model="gpt-4o-mini",
+    ),
+}

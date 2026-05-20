@@ -1,0 +1,67 @@
+# Athena 权限规则:从上到下匹配,第一条命中即生效
+# 每条规则:matches (匹配条件) + decision (Allow/Ask/Deny)
+
+rules:
+  # ---------- DENY: 绝对禁止 ----------
+  - name: "block_destructive_rm"
+    matches:
+      tool: "bash"
+      command_pattern: "^rm\\s+(-rf?|--recursive)\\s+(/|~|\\$HOME)"
+    decision: deny
+    reason: "破坏性删除根目录,绝对禁止"
+  
+  - name: "block_fork_bomb"
+    matches:
+      tool: "bash"
+      command_pattern: ":\\(\\)\\s*\\{.*\\|.*&\\s*\\}"
+    decision: deny
+    reason: "Fork bomb 模式"
+  
+  - name: "block_external_writes"
+    matches:
+      tool: "file_write"
+      path_pattern: "^(/etc|/sys|/proc|/usr|/boot)"
+    decision: deny
+    reason: "系统目录禁止写入"
+  
+  - name: "block_outbound_unknown"
+    matches:
+      tool: "http_request"
+      url_pattern: "^https?://(localhost|127\\.|192\\.168\\.|10\\.|172\\.1[6-9]\\.|172\\.2\\d\\.|172\\.3[01]\\.)"
+    decision: deny
+    reason: "禁止访问内网地址(SSRF 防护)"
+  
+  # ---------- ASK: 询问用户 ----------
+  - name: "ask_bash_general"
+    matches:
+      tool: "bash"
+    decision: ask
+    risk_summary: "执行 shell 命令可能修改文件或调用外部服务"
+  
+  - name: "ask_write_user_files"
+    matches:
+      tool: "file_write"
+      path_pattern: "^/workspace/"
+    decision: ask
+    risk_summary: "写入工作目录文件"
+  
+  - name: "ask_paid_api"
+    matches:
+      tool: "tavily_search"
+    decision: ask
+    risk_summary: "付费搜索 API,单次约 ¥0.01"
+    only_when_budget_remaining_below: 0.30        # 预算紧张时才问,否则放行
+  
+  # ---------- ALLOW: 默认放行 ----------
+  - name: "allow_read"
+    matches:
+      tool_in: ["file_read", "list_files", "search_files"]
+    decision: allow
+  
+  - name: "allow_pure_compute"
+    matches:
+      tool_in: ["calculator", "python_repl_safe"]    # python_repl_safe 是沙箱里的,见 ch31
+    decision: allow
+
+# 兜底:没匹配上任何规则
+default: ask                                     # 安全为先,不确定就问

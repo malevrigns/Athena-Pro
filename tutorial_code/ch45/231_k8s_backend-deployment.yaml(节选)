@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: athena-backend
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0                          # 0!保证滚动不掉容量
+  selector:
+    matchLabels: { app: athena-backend }
+  template:
+    metadata:
+      labels: { app: athena-backend }
+    spec:
+      terminationGracePeriodSeconds: 60          # 给正在跑的任务时间收尾
+      containers:
+      - name: backend
+        image: registry.example.com/athena/backend:1.0.0
+        ports: [{ containerPort: 8000 }]
+        
+        readinessProbe:                          # 决定是否接流量
+          httpGet: { path: /healthz, port: 8000 }
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        
+        livenessProbe:                           # 决定是否重启
+          httpGet: { path: /healthz, port: 8000 }
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          failureThreshold: 3
+        
+        resources:
+          requests: { cpu: "500m", memory: "1Gi" }
+          limits:   { cpu: "2",    memory: "2Gi" }
+        
+        lifecycle:
+          preStop:                               # K8s 杀容器前留 5s 让 LB 摘流量
+            exec:
+              command: ["sleep", "5"]
+        
+        env:
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef: { name: athena-secrets, key: openai_api_key }

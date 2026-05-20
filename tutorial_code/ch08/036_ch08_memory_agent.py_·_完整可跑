@@ -1,0 +1,89 @@
+"""
+ch08 · 给 Agent 装上记忆 · 完整 demo
+运行前确保 export OPENAI_API_KEY=sk-...
+
+演示三件事:
+  1. 没 checkpointer = 失忆 Agent
+  2. 加 checkpointer = 跨次记忆
+  3. 同一 checkpointer 不同 thread_id = 多用户隔离
+"""
+from langchain_openai import ChatOpenAI
+from langchain_core.tools import tool
+from langgraph.prebuilt import create_react_agent
+from langgraph.checkpoint.memory import InMemorySaver
+
+
+# 一个最小工具(让 Agent 有点事情可做)
+@tool
+def get_current_time() -> str:
+    """获取当前时间。"""
+    from datetime import datetime
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def chat(agent, msg: str, config: dict | None = None):
+    """打印用户消息和 Agent 回复的简易封装。"""
+    print(f"\n[User] {msg}")
+    result = agent.invoke(
+        {"messages": [{"role": "user", "content": msg}]},
+        config=config,
+    )
+    print(f"[Agent] {result['messages'][-1].content}")
+
+
+def demo_no_memory():
+    """场景 1:没有 checkpointer,完全失忆"""
+    print("\n========== 场景 1:无记忆 Agent ==========")
+    agent = create_react_agent(
+        model=ChatOpenAI(model="gpt-4o-mini"),
+        tools=[get_current_time],
+    )
+    chat(agent, "我叫张三,记住了吗?")
+    chat(agent, "我刚才告诉你我叫什么?")
+    # 第二次问会得到"抱歉,我不知道"
+
+
+def demo_with_memory():
+    """场景 2:加 checkpointer,跨次记忆"""
+    print("\n========== 场景 2:有记忆 Agent ==========")
+    checkpointer = InMemorySaver()
+    agent = create_react_agent(
+        model=ChatOpenAI(model="gpt-4o-mini"),
+        tools=[get_current_time],
+        checkpointer=checkpointer,        # ← 关键
+    )
+    # 必须传 thread_id 作为对话标识
+    config = {"configurable": {"thread_id": "user-zhang-san"}}
+    chat(agent, "我叫张三,记住了吗?", config=config)
+    chat(agent, "我刚才告诉你我叫什么?", config=config)
+    # 第二次会回复"你叫张三"
+
+
+def demo_multiple_threads():
+    """场景 3:同一 checkpointer 支持多个独立会话"""
+    print("\n========== 场景 3:多 thread 隔离 ==========")
+    checkpointer = InMemorySaver()
+    agent = create_react_agent(
+        model=ChatOpenAI(model="gpt-4o-mini"),
+        tools=[get_current_time],
+        checkpointer=checkpointer,
+    )
+    config_a = {"configurable": {"thread_id": "alice"}}
+    config_b = {"configurable": {"thread_id": "bob"}}
+    
+    chat(agent, "我叫 Alice", config=config_a)
+    chat(agent, "我叫 Bob", config=config_b)
+    chat(agent, "我是谁?", config=config_a)  # → Alice
+    chat(agent, "我是谁?", config=config_b)  # → Bob
+
+    # 看 Alice 的对话历史
+    print("\n--- Alice 的对话历史 ---")
+    state = agent.get_state(config_a)
+    for msg in state.values["messages"]:
+        print(f"  [{msg.__class__.__name__}] {msg.content[:60]}")
+
+
+if __name__ == "__main__":
+    demo_no_memory()
+    demo_with_memory()
+    demo_multiple_threads()

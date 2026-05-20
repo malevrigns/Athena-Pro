@@ -1,0 +1,18 @@
+# 数据/科学
+numpy
+pandas
+scipy
+scikit-learn
+matplotlib
+seaborn
+
+# 网络(只读用)
+httpx
+requests
+beautifulsoup4
+lxml
+
+# 其他常用
+pyyaml
+rich
+tqdm

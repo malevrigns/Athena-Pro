@@ -1,0 +1,5 @@
+# 50 个典型研究问题,涵盖不同领域和难度
+{"id": "easy-1", "question": "什么是 LangGraph", "expected_topics": ["定义", "用法"], "max_cost_usd": 0.10}
+{"id": "med-1", "question": "对比 LangGraph 和 CrewAI 的设计差异", "expected_topics": ["架构", "性能", "适用场景"]}
+{"id": "hard-1", "question": "2026 年大模型量化部署的工程实践", "expected_topics": ["AWQ", "GPTQ", "推理框架", "硬件"], "max_cost_usd": 0.50}
+# ... 50 条 ...

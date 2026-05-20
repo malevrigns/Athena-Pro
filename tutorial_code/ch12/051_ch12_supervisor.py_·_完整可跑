@@ -1,0 +1,124 @@
+"""
+ch12 · Supervisor 多 Agent 架构 · 完整 demo
+场景:研究某个话题
+  - Researcher: 收集信息
+  - Coder:     用代码做一些数据处理(这里简化为"计算")
+  - Writer:    汇总成报告
+
+Supervisor 用纯 Python 逻辑调度(不调 LLM,稳定)
+
+运行前确保 export OPENAI_API_KEY=sk-...
+"""
+from typing import Annotated, TypedDict, Literal
+from langchain_openai import ChatOpenAI
+from langgraph.graph import StateGraph, START, END
+from langgraph.types import Command
+
+
+# ---------- State ----------
+class State(TypedDict):
+    task: str
+    research_done: bool
+    research_summary: str
+    code_done: bool
+    code_result: str
+    final_report: str
+
+
+llm = ChatOpenAI(model="gpt-4o-mini")
+
+
+# ---------- Worker 节点 ----------
+def researcher_node(state: State) -> Command[Literal["supervisor"]]:
+    """收集信息(简化:让 LLM 生成模拟数据)"""
+    print("\n🔍 [Researcher] 调研中...")
+    resp = llm.invoke([
+        {"role": "system", "content": "用 50 字总结一下相关行业信息(模拟调研)。"},
+        {"role": "user", "content": state["task"]},
+    ])
+    print(f"   产出:{resp.content[:80]}...")
+    return Command(
+        update={
+            "research_summary": resp.content,
+            "research_done": True,
+        },
+        goto="supervisor",
+    )
+
+
+def coder_node(state: State) -> Command[Literal["supervisor"]]:
+    """根据 research 跑一些'数据计算'"""
+    print("\n💻 [Coder] 处理数据...")
+    # 假装跑代码 - 这里直接算个简单的值
+    summary = state["research_summary"]
+    word_count = len(summary)
+    sentence_count = summary.count("。") + summary.count(".")
+    result = f"研究文本统计: {word_count} 字 / {sentence_count} 句"
+    print(f"   产出:{result}")
+    return Command(
+        update={
+            "code_result": result,
+            "code_done": True,
+        },
+        goto="supervisor",
+    )
+
+
+def writer_node(state: State):
+    """根据所有信息撰写最终报告"""
+    print("\n✍️  [Writer] 撰写报告...")
+    resp = llm.invoke([
+        {"role": "system", "content": "你是商业分析师,给一份简短的总结报告(150字内)。"},
+        {"role": "user", "content": (
+            f"任务: {state['task']}\n"
+            f"调研: {state['research_summary']}\n"
+            f"数据: {state['code_result']}"
+        )},
+    ])
+    return {"final_report": resp.content}
+
+
+# ---------- Supervisor ----------
+def supervisor_node(state: State) -> Command[Literal["researcher", "coder", "writer", "__end__"]]:
+    """
+    纯 Python 逻辑调度,无 LLM。
+    工作流程:Researcher → Coder → Writer → END
+    """
+    if not state.get("research_done"):
+        print("\n👔 [Supervisor] 派出 Researcher")
+        return Command(goto="researcher")
+    if not state.get("code_done"):
+        print("\n👔 [Supervisor] 派出 Coder")
+        return Command(goto="coder")
+    if not state.get("final_report"):
+        print("\n👔 [Supervisor] 派出 Writer")
+        return Command(goto="writer")
+    print("\n👔 [Supervisor] 全部完成,结束")
+    return Command(goto=END)
+
+
+# ---------- 建图 ----------
+builder = StateGraph(State)
+builder.add_node("supervisor", supervisor_node)
+builder.add_node("researcher", researcher_node)
+builder.add_node("coder", coder_node)
+builder.add_node("writer", writer_node)
+
+# Supervisor 是图的入口,所有 worker 完成后回 supervisor
+builder.add_edge(START, "supervisor")
+builder.add_edge("writer", "supervisor")  # writer 完成后让 supervisor 决定结束
+
+graph = builder.compile()
+
+
+# ---------- 跑起来 ----------
+if __name__ == "__main__":
+    result = graph.invoke({
+        "task": "调研 2026 年新能源汽车在欧洲市场的渗透情况",
+        "research_done": False,
+        "code_done": False,
+    })
+    print("\n" + "=" * 60)
+    print("📊 最终报告")
+    print("=" * 60)
+    print(result["final_report"])

@@ -1,0 +1,133 @@
+"""
+ch10 · 人工介入(HITL)· 完整 demo
+场景:AI 生成邮件草稿,人类审核(批准/修改/拒绝)后才"发送"
+
+运行前确保 export OPENAI_API_KEY=sk-...
+"""
+from typing import Annotated, TypedDict, Literal
+from langchain_openai import ChatOpenAI
+from langgraph.graph import StateGraph, START, END
+from langgraph.graph.message import add_messages
+from langgraph.types import interrupt, Command
+from langgraph.checkpoint.memory import InMemorySaver
+
+
+# ---------- State ----------
+class State(TypedDict):
+    messages: Annotated[list, add_messages]
+    draft: str             # AI 生成的邮件草稿
+    final_email: str       # 审核确定后的最终版本
+    decision: str          # approve / edit / reject
+
+
+llm = ChatOpenAI(model="gpt-4o-mini")
+
+
+# ---------- 节点 ----------
+def draft_node(state: State):
+    """LLM 拟一封邮件草稿"""
+    request = state["messages"][-1].content
+    response = llm.invoke([
+        {"role": "system", "content": "你是一个邮件助手,根据用户请求生成一封简洁的英文邮件草稿,不要加任何解释,直接输出邮件正文。"},
+        {"role": "user", "content": request},
+    ])
+    return {"draft": response.content}
+
+
+def human_review(state: State) -> Command[Literal["send", "__end__"]]:
+    """暂停,把草稿交给人类审核"""
+    decision_payload = interrupt({
+        "action": "review_email",
+        "draft": state["draft"],
+        "hint": "回复 dict: {'decision': 'approve'|'edit'|'reject', 'edited_draft': '...' (仅 edit 时需要)}",
+    })
+    # 这里恢复执行时,decision_payload 是外部传入的值
+    
+    decision = decision_payload.get("decision")
+    
+    if decision == "approve":
+        return Command(
+            update={"final_email": state["draft"], "decision": "approve"},
+            goto="send",
+        )
+    elif decision == "edit":
+        edited = decision_payload.get("edited_draft", state["draft"])
+        return Command(
+            update={"final_email": edited, "decision": "edit"},
+            goto="send",
+        )
+    else:  # reject
+        return Command(
+            update={"decision": "reject"},
+            goto=END,
+        )
+
+
+def send_node(state: State):
+    """假装发送邮件"""
+    print(f"\n📧 [模拟发送] 邮件已发出:\n{state['final_email']}\n")
+    return {}
+
+
+# ---------- 建图 ----------
+builder = StateGraph(State)
+builder.add_node("draft", draft_node)
+builder.add_node("human_review", human_review)
+builder.add_node("send", send_node)
+builder.add_edge(START, "draft")
+builder.add_edge("draft", "human_review")
+builder.add_edge("send", END)
+
+# 关键:HITL 必须有 checkpointer
+checkpointer = InMemorySaver()
+graph = builder.compile(checkpointer=checkpointer)
+
+
+# ---------- 跑起来 ----------
+def main():
+    config = {"configurable": {"thread_id": "email-001"}}
+    
+    # 第一次 invoke 会跑到 interrupt 处暂停
+    result = graph.invoke(
+        {"messages": [{"role": "user", "content": "帮我写一封请求加薪的邮件,寄给 boss@example.com"}]},
+        config=config,
+    )
+    
+    # 查暂停状态
+    state = graph.get_state(config)
+    interrupts = state.tasks[0].interrupts if state.tasks else []
+    if not interrupts:
+        print("没有 interrupt(预料外的状态)")
+        return
+    
+    print("=" * 60)
+    print("🛑 图暂停,等待人工审核")
+    print("=" * 60)
+    print(f"AI 生成的草稿:\n\n{interrupts[0].value['draft']}\n")
+    print("=" * 60)
+    
+    # 模拟人类输入(实际产品里这是 web 表单 / 消息)
+    print("\n请选择: [a]批准 / [e]修改后发 / [r]拒绝")
+    user_input = input("> ").strip().lower()
+    
+    if user_input == "a":
+        decision = {"decision": "approve"}
+    elif user_input == "e":
+        edited = input("输入修改后的版本(直接回车保留原版):").strip()
+        decision = {
+            "decision": "edit",
+            "edited_draft": edited or interrupts[0].value["draft"],
+        }
+    else:
+        decision = {"decision": "reject"}
+    
+    # 用 Command(resume=...) 恢复
+    graph.invoke(Command(resume=decision), config=config)
+    
+    # 看最终状态
+    final = graph.get_state(config)
+    print(f"\n✅ 最终决定: {final.values['decision']}")
+
+
+if __name__ == "__main__":
+    main()

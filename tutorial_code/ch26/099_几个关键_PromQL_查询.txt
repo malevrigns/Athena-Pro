@@ -1,0 +1,19 @@
+# 1. p95 延迟超过 SLO 的节点(SLO: 60s)
+histogram_quantile(0.95,
+  rate(athena_node_duration_seconds_bucket[5m])
+) > 60
+
+# 2. 任务成功率(过去 1 小时)
+sum(rate(athena_task_completed_total{outcome="success"}[1h]))
+/
+sum(rate(athena_task_completed_total[1h]))
+
+# 3. 单任务平均成本(美元)
+rate(athena_llm_cost_usd_total[15m])
+/
+rate(athena_task_completed_total[15m])
+
+# 4. HITL 超时率(应该 < 5%,否则前端通知体验有问题)
+sum(rate(athena_interrupt_timeouts_total[1h]))
+/
+sum(rate(athena_task_created_total[1h]))

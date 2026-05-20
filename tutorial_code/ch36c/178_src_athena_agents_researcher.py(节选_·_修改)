@@ -1,0 +1,21 @@
+from athena.prefetch.cache import prefetch_cache
+
+async def researcher_node(state, send_input):
+    task_id = state["task_id"]
+    topic_id = send_input["topic_id"]
+    topic_text = send_input["topic"]
+    
+    # ① 先查 prefetch cache
+    cached_search = await prefetch_cache.get_search(
+        task_id, topic_id, _build_search_query(topic_text)
+    )
+    if cached_search:
+        logger.info("prefetch_hit", task_id=task_id, topic_id=topic_id)
+        # 直接用 cache,跳过 web_search
+        search_results = cached_search
+    else:
+        # ② miss · 真调
+        search_results = await web_search(_build_search_query(topic_text))
+    
+    # 后续 fetch_url 也是先查 cache,miss 再调
+    ...

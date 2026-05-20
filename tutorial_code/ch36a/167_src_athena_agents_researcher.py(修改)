@@ -1,0 +1,13 @@
+from athena.skills.tools import SKILL_TOOLS
+
+def _build_inner_agent():
+    return create_react_agent(
+        model=llm,
+        tools=[
+            web_search,
+            fetch_url,
+            *SKILL_TOOLS,                          # ← 加上
+        ],
+        prompt=RESEARCHER_PROMPT + "\n\n" + list_available_skills_summary(),
+        # ↑ 把 skill 清单塞进 system prompt
+    )

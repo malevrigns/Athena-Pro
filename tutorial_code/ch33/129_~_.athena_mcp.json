@@ -1,0 +1,29 @@
+{
+  "servers": {
+    "github": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      },
+      "permission_policy": "ask_for_writes"
+    },
+    "postgres-readonly": {
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-postgres", "--readonly",
+               "postgresql://reader@db.internal/analytics"],
+      "permission_policy": "auto_approve"
+    },
+    "company-wiki": {
+      "transport": "sse",
+      "url": "https://mcp.company.internal/wiki/sse",
+      "headers": {
+        "Authorization": "Bearer ${WIKI_TOKEN}"
+      },
+      "permission_policy": "auto_approve"
+    }
+  },
+  "default_permission_policy": "ask"
+}

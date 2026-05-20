@@ -1,0 +1,31 @@
+"""图构建:绑定 Postgres checkpointer 的最终版本"""
+from __future__ import annotations
+from langgraph.graph import StateGraph, START
+
+from athena.graph.state import ResearchState
+from athena.graph.nodes import (
+    planner_node, supervisor_node, researcher_node,
+    fact_check_one, fact_check_gate, dispatch_fact_check,
+    writer_node, citation_validator_node, reviewer_node,
+)
+from athena.store.checkpointer import get_checkpointer
+
+
+async def build_main_graph():
+    """构建主图,绑定异步 Postgres checkpointer。"""
+    g = StateGraph(ResearchState)
+    
+    g.add_node("planner", planner_node)
+    g.add_node("supervisor", supervisor_node)
+    g.add_node("researcher", researcher_node)
+    g.add_node("fact_check_one", fact_check_one)
+    g.add_node("fact_check_gate", fact_check_gate)
+    g.add_node("citation_validator", citation_validator_node)
+    g.add_node("writer", writer_node)
+    g.add_node("reviewer", reviewer_node)
+    
+    g.add_edge(START, "planner")
+    # 其他路由由各节点的 Command(goto=...) 处理
+    
+    checkpointer = await get_checkpointer()
+    return g.compile(checkpointer=checkpointer)
