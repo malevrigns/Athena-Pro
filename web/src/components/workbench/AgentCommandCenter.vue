@@ -19,6 +19,8 @@ const emptySummary: AgentTraceSummary = {
   knowledge_hits: 0,
   total_tokens: 0,
   total_cost_usd: 0,
+  capability_count: 0,
+  tool_count: 0,
 }
 const items = ref<AgentTraceItem[]>([])
 const summary = ref<AgentTraceSummary>({ ...emptySummary })
@@ -110,6 +112,10 @@ function formatTokens(tokens: number): string {
         <span>成本</span>
         <b>${{ summary.total_cost_usd.toFixed(4) }}</b>
       </div>
+      <div class="agent-stat">
+        <span>能力/工具</span>
+        <b>{{ summary.capability_count }}/{{ summary.tool_count }}</b>
+      </div>
     </div>
 
     <ElAlert v-if="error" class="agent-error" type="error" :closable="false" :title="error" />
@@ -127,7 +133,13 @@ function formatTokens(tokens: number): string {
           <span class="agent-status">{{ statusLabel(agent.status) }}</span>
         </div>
         <h4>{{ agent.title }}</h4>
+        <div class="agent-autonomy">{{ agent.autonomy_level }}</div>
         <p class="agent-objective">{{ agent.objective }}</p>
+        <div class="agent-tags">
+          <span v-for="capability in agent.capabilities" :key="capability" class="agent-tag">
+            {{ capability }}
+          </span>
+        </div>
         <dl class="agent-io">
           <div>
             <dt>输入</dt>
@@ -137,12 +149,19 @@ function formatTokens(tokens: number): string {
             <dt>输出</dt>
             <dd>{{ agent.output_summary || '尚未产生输出' }}</dd>
           </div>
+          <div>
+            <dt>下一步</dt>
+            <dd>{{ agent.next_action }}</dd>
+          </div>
         </dl>
         <div class="agent-metrics">
           <span>来源 <b>{{ agent.source_count }}</b></span>
           <span :class="{ hot: agent.knowledge_hits > 0 }">知识库 <b>{{ agent.knowledge_hits }}</b></span>
           <span>证据 <b>{{ agent.evidence_count }}</b></span>
           <span>Token <b>{{ formatTokens(agent.token_count) }}</b></span>
+        </div>
+        <div class="agent-tools">
+          <span v-for="tool in agent.tools" :key="tool">{{ tool }}</span>
         </div>
       </article>
     </div>

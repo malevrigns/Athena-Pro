@@ -397,3 +397,8 @@ async def test_agent_trace_endpoint_exposes_knowledge_backed_researchers(
     assert by_id["researcher:topic_rag"]["knowledge_hits"] == 1
     assert by_id["researcher:topic_rag"]["source_count"] == 2
     assert "知识库命中" in by_id["researcher:topic_rag"]["output_summary"]
+    assert "knowledge_retrieval" in by_id["researcher:topic_rag"]["capabilities"]
+    assert "knowledge_base" in by_id["researcher:topic_rag"]["tools"]
+    assert by_id["researcher:topic_rag"]["next_action"] == "交给 Quality Gate 校验"
+    assert payload["summary"]["capability_count"] >= 8
+    assert payload["summary"]["tool_count"] >= 4

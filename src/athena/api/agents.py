@@ -1,67 +1,17 @@
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
-from typing import Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 
+from athena.api.agent_catalog import next_action_for, profile_for
+from athena.api.agent_models import AgentItemSpec, AgentStatus, AgentTraceItem, AgentTraceResponse, AgentTraceSummary
 from athena.runtime import runtime_store
 from athena.schemas import Finding, ResearchTopic, StreamEvent, TaskStatus, TokenUsage
 from athena.state import ResearchState
 
 
-AgentStatus = Literal["queued", "running", "done", "skipped", "failed"]
-
 router = APIRouter(tags=["agents"])
-
-
-@dataclass(frozen=True)
-class AgentItemSpec:
-    id: str
-    role: str
-    title: str
-    status: AgentStatus
-    objective: str
-    input_summary: str
-    output_summary: str
-    nodes: list[str]
-    event_types: list[str]
-
-
-class AgentTraceItem(BaseModel):
-    id: str
-    role: str
-    title: str
-    status: AgentStatus
-    objective: str
-    input_summary: str = ""
-    output_summary: str = ""
-    evidence_count: int = 0
-    source_count: int = 0
-    knowledge_hits: int = 0
-    token_count: int = 0
-    cost_usd: float = 0.0
-    updated_at: str = ""
-
-
-class AgentTraceSummary(BaseModel):
-    total_agents: int
-    completed_agents: int
-    running_agents: int
-    queued_agents: int
-    skipped_agents: int
-    failed_agents: int
-    source_count: int
-    knowledge_hits: int
-    total_tokens: int
-    total_cost_usd: float
-
-
-class AgentTraceResponse(BaseModel):
-    items: list[AgentTraceItem]
-    summary: AgentTraceSummary
 
 
 @router.get("/v1/research/{task_id}/agents", response_model=AgentTraceResponse)
@@ -183,10 +133,15 @@ def _writer_item(state: ResearchState) -> AgentTraceItem:
 
 def _item(state: ResearchState, spec: AgentItemSpec) -> AgentTraceItem:
     usage = _usage_for(state.token_usage, spec.role)
+    profile = profile_for(spec.role)
     return AgentTraceItem(
         id=spec.id, role=spec.role, title=spec.title, status=spec.status, objective=spec.objective,
         input_summary=spec.input_summary, output_summary=spec.output_summary,
         token_count=usage["tokens"], cost_usd=usage["cost"],
+        autonomy_level=profile.autonomy_level,
+        capabilities=list(profile.capabilities),
+        tools=list(profile.tools),
+        next_action=next_action_for(spec.role, spec.status),
         updated_at=_last_updated(state.events, spec.nodes, spec.event_types),
     )
 
@@ -236,6 +191,8 @@ def _total_sources(state: ResearchState) -> int:
 
 def _summary(items: list[AgentTraceItem], usages: list[TokenUsage]) -> AgentTraceSummary:
     counts = Counter(item.status for item in items)
+    capabilities = {capability for item in items for capability in item.capabilities}
+    tools = {tool for item in items for tool in item.tools}
     return AgentTraceSummary(
         total_agents=len(items), completed_agents=counts["done"], running_agents=counts["running"],
         queued_agents=counts["queued"], skipped_agents=counts["skipped"], failed_agents=counts["failed"],
@@ -243,6 +200,8 @@ def _summary(items: list[AgentTraceItem], usages: list[TokenUsage]) -> AgentTrac
         knowledge_hits=sum(item.knowledge_hits for item in items),
         total_tokens=sum(usage.input_tokens + usage.output_tokens for usage in usages),
         total_cost_usd=round(sum(usage.cost_usd for usage in usages), 6),
+        capability_count=len(capabilities),
+        tool_count=len(tools),
     )
 
 

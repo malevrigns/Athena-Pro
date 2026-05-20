@@ -48,7 +48,7 @@
 }
 .agent-summary-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
 }
 .agent-stat {
@@ -127,11 +127,35 @@
   color: var(--text);
   font-size: 14px;
 }
+.agent-autonomy {
+  display: inline-flex;
+  margin-bottom: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #4f46e5;
+  font-family: var(--t-mono);
+  font-size: 11px;
+}
 .agent-objective {
   margin: 0 0 10px;
   color: var(--muted);
   font-size: 12.5px;
   line-height: 1.45;
+}
+.agent-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.agent-tag {
+  padding: 3px 7px;
+  border-radius: 7px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 650;
 }
 .agent-io {
   display: grid;
@@ -172,6 +196,19 @@
 }
 .agent-metrics b {
   color: var(--text);
+}
+.agent-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+.agent-tools span {
+  color: var(--muted);
+  font-family: var(--t-mono);
+  font-size: 11px;
 }
 @media (max-width: 900px) {
   .agent-command-head {

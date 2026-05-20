@@ -15,6 +15,10 @@ export interface AgentTraceItem {
   knowledge_hits: number
   token_count: number
   cost_usd: number
+  autonomy_level: string
+  capabilities: string[]
+  tools: string[]
+  next_action: string
   updated_at: string
 }
 
@@ -29,6 +33,8 @@ export interface AgentTraceSummary {
   knowledge_hits: number
   total_tokens: number
   total_cost_usd: number
+  capability_count: number
+  tool_count: number
 }
 
 export interface AgentTraceResponse {
