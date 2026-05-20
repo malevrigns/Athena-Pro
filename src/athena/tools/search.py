@@ -5,6 +5,7 @@ import hashlib
 import time
 from dataclasses import dataclass, field
 from typing import Protocol
+from urllib.parse import urlparse
 
 from pydantic import BaseModel
 
@@ -14,6 +15,16 @@ from athena.schemas import Source
 from athena.tools.retry import async_retry
 
 
+ALLOWED_RESULT_SCHEMES = {"http", "https"}
+
+
+def _validate_web_url(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.scheme not in ALLOWED_RESULT_SCHEMES or not parsed.netloc:
+        raise ValueError("search result url must be an absolute http(s) URL")
+    return url
+
+
 class SearchResult(BaseModel):
     title: str
     url: str
@@ -21,6 +32,7 @@ class SearchResult(BaseModel):
     score: float = 0.7
 
     def to_source(self) -> Source:
+        _validate_web_url(self.url)
         is_mock = self.url.startswith("https://example.com/")
         return Source(
             title=self.title,

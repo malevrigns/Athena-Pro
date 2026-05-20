@@ -15,6 +15,8 @@ from athena.schemas import (
     utcnow,
 )
 
+TERMINAL_EVENT_TYPES = {"done", "error", "cancelled"}
+
 
 @dataclass
 class ResearchState:
@@ -55,7 +57,16 @@ class ResearchState:
 
     def add_usage(self, usage: TokenUsage) -> None:
         self.token_usage.append(usage)
-        self.add_event("usage", node=usage.node, usage=usage.model_dump(mode="json"))
+        event = StreamEvent(
+            type="usage",
+            task_id=self.task_id,
+            node=usage.node,
+            payload={"usage": usage.model_dump(mode="json")},
+        )
+        if self.events and self.events[-1].type in TERMINAL_EVENT_TYPES:
+            self.events.insert(len(self.events) - 1, event)
+            return
+        self.events.append(event)
 
     def add_error(self, error: str, node: str | None = None) -> None:
         self.errors.append(error)

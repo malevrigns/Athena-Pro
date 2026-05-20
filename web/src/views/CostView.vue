@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import {
   Refresh, Download, Warning, ArrowRight, More,
 } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import EChart from '@/components/charts/EChart.vue'
 import { useTaskStore } from '@/stores/task'
 import { useSessionStore } from '@/stores/session'
@@ -41,8 +42,22 @@ async function loadAll() {
     summary.value = s; trendData.value = t; byModel.value = m; byNode.value = n
     taskRowsApi.value = ts.items; tipsApi.value = tp.items
   } catch (err) {
-    console.warn('[cost] load failed', err)
+    ElMessage.error((err as Error).message)
   } finally { loading.value = false }
+}
+
+async function refreshCost() {
+  await loadAll()
+  ElMessage.success('成本数据已刷新')
+}
+
+async function exportCostCsv() {
+  try {
+    await costApi.downloadTasksCsv(range.value)
+    ElMessage.success('成本明细 CSV 已开始下载')
+  } catch (err) {
+    ElMessage.error((err as Error).message)
+  }
 }
 onMounted(async () => {
   await task.refreshTasks(); await loadAll()
@@ -262,8 +277,8 @@ const modelShare = computed(() =>
         </ElSelect>
       </div>
       <div class="filter-grow"></div>
-      <button class="btn-secondary"><ElIcon><Refresh /></ElIcon><span>刷新</span></button>
-      <button class="primary-btn"><ElIcon><Download /></ElIcon><span>导出报表</span></button>
+      <button class="btn-secondary" :disabled="loading" @click="refreshCost"><ElIcon><Refresh /></ElIcon><span>刷新</span></button>
+      <button class="primary-btn" :disabled="loading" @click="exportCostCsv"><ElIcon><Download /></ElIcon><span>导出报表</span></button>
     </section>
 
     <!-- KPI grid -->
@@ -370,8 +385,8 @@ const modelShare = computed(() =>
             <div class="td-time">{{ r.time }}</div>
           </div>
           <div class="task-foot">
-            <span>查看全部任务明细 (8)</span>
-            <button class="btn-secondary"><ElIcon><Download /></ElIcon><span>导出明细</span></button>
+            <span>查看全部任务明细 ({{ taskRowsApi.length }})</span>
+            <button class="btn-secondary" :disabled="loading" @click="exportCostCsv"><ElIcon><Download /></ElIcon><span>导出明细</span></button>
           </div>
         </article>
       </div>

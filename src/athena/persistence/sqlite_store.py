@@ -96,6 +96,12 @@ def _state_to_json(state: ResearchState) -> str:
     return json.dumps(payload, ensure_ascii=False, default=str)
 
 
+def _failed_snapshot_json(state_json: str) -> str:
+    payload = json.loads(state_json)
+    payload.setdefault("snapshot", {})["status"] = TaskStatus.FAILED.value
+    return json.dumps(payload, ensure_ascii=False, default=str)
+
+
 def _safe_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     """Strip non-serialisable runtime objects (like TokenLedger) before persisting."""
     safe: dict[str, Any] = {}
@@ -238,15 +244,16 @@ class SQLiteStore:
         assert self._conn is not None
         async with self._lock:
             cursor = await self._conn.execute(
-                "SELECT type, node, payload_json, ts FROM events WHERE task_id = ? ORDER BY seq ASC",
+                "SELECT seq, type, node, payload_json, ts FROM events WHERE task_id = ? ORDER BY seq ASC",
                 (task_id,),
             )
             rows = await cursor.fetchall()
             await cursor.close()
         events: list[StreamEvent] = []
-        for type_, node, payload_json, ts in rows:
+        for seq, type_, node, payload_json, ts in rows:
             events.append(
                 StreamEvent(
+                    seq=seq,
                     type=type_,
                     task_id=task_id,
                     node=node,
@@ -391,6 +398,32 @@ class SQLiteStore:
             )
             await self._conn.commit()
 
+    async def verify_knowledge_item(self, item_id: str) -> bool:
+        await self.connect()
+        assert self._conn is not None
+        async with self._lock:
+            cursor = await self._conn.execute(
+                "UPDATE knowledge_items SET status = ?, updated_at = ? WHERE id = ?",
+                ("verified", _iso_now(), item_id),
+            )
+            await self._conn.commit()
+            changed = cursor.rowcount
+            await cursor.close()
+        return bool(changed)
+
+    async def delete_knowledge_item(self, item_id: str) -> bool:
+        await self.connect()
+        assert self._conn is not None
+        async with self._lock:
+            cursor = await self._conn.execute(
+                "DELETE FROM knowledge_items WHERE id = ?",
+                (item_id,),
+            )
+            await self._conn.commit()
+            changed = cursor.rowcount
+            await cursor.close()
+        return bool(changed)
+
     async def knowledge_overview(self) -> dict[str, Any]:
         await self.connect()
         assert self._conn is not None
@@ -423,15 +456,16 @@ class SQLiteStore:
         assert self._conn is not None
         terminal = {"done", "failed", "cancelled"}
         async with self._lock:
-            cursor = await self._conn.execute("SELECT task_id, status FROM tasks")
+            cursor = await self._conn.execute("SELECT task_id, status, state_json FROM tasks")
             rows = await cursor.fetchall()
             await cursor.close()
             count = 0
-            for task_id, status in rows:
+            for task_id, status, state_json in rows:
                 if status not in terminal:
+                    updated_state_json = _failed_snapshot_json(state_json)
                     await self._conn.execute(
-                        "UPDATE tasks SET status = ?, updated_at = ? WHERE task_id = ?",
-                        (TaskStatus.FAILED.value, _iso_now(), task_id),
+                        "UPDATE tasks SET status = ?, state_json = ?, updated_at = ? WHERE task_id = ?",
+                        (TaskStatus.FAILED.value, updated_state_json, _iso_now(), task_id),
                     )
                     count += 1
             if count:

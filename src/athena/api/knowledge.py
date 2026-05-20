@@ -18,11 +18,19 @@ from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from athena.api.csv_utils import escape_csv_cell
 from athena.config import get_settings
 from athena.persistence import get_store
 
 
 router = APIRouter(prefix="/v1/knowledge", tags=["knowledge"])
+
+
+BYTES_PER_KIB = 1024
+UPLOAD_CHUNK_KIB = 1024
+SUMMARY_PREVIEW_KIB = 1
+UPLOAD_CHUNK_BYTES = UPLOAD_CHUNK_KIB * BYTES_PER_KIB
+SUMMARY_PREVIEW_BYTES = SUMMARY_PREVIEW_KIB * BYTES_PER_KIB
 
 
 _DEFAULT_COLLECTIONS = [
@@ -42,6 +50,29 @@ async def _seed_collections_if_empty() -> None:
         return
     for c in _DEFAULT_COLLECTIONS:
         await store.upsert_knowledge_collection(c)
+
+
+async def _store_upload_file(file: UploadFile, target: Path, max_bytes: int) -> tuple[int, bytes]:
+    total = 0
+    preview = bytearray()
+    over_limit = False
+    try:
+        with target.open("wb") as out:
+            while chunk := await file.read(UPLOAD_CHUNK_BYTES):
+                total += len(chunk)
+                if total > max_bytes:
+                    over_limit = True
+                    break
+                out.write(chunk)
+                remaining = SUMMARY_PREVIEW_BYTES - len(preview)
+                if remaining > 0:
+                    preview.extend(chunk[:remaining])
+    finally:
+        await file.close()
+    if over_limit:
+        target.unlink(missing_ok=True)
+        raise HTTPException(413, f"file exceeds upload limit of {max_bytes} bytes")
+    return total, bytes(preview)
 
 
 class CollectionIn(BaseModel):
@@ -102,13 +133,8 @@ async def create_item(body: ItemIn):
 
 @router.post("/items/{item_id}/verify")
 async def verify_item(item_id: str):
-    store = get_store()
-    items, _ = await store.list_knowledge_items()
-    target = next((i for i in items if i["id"] == item_id), None)
-    if not target:
+    if not await get_store().verify_knowledge_item(item_id):
         raise HTTPException(404, "item not found")
-    target["status"] = "verified"
-    await store.upsert_knowledge_item(target)
     return {"id": item_id, "status": "verified"}
 
 
@@ -129,39 +155,30 @@ async def upload_document(file: UploadFile = File(...), collection_id: str | Non
     target_dir.mkdir(parents=True, exist_ok=True)
     safe_name = (file.filename or f"upload_{uuid4().hex[:6]}").replace("/", "_").replace("\\", "_")
     target = target_dir / f"{uuid4().hex[:8]}_{safe_name}"
-    contents = await file.read()
-    target.write_bytes(contents)
+    total_bytes, preview = await _store_upload_file(file, target, settings.max_upload_bytes)
     # quick text peek
     summary = ""
     try:
-        summary = contents[:1024].decode("utf-8", errors="ignore").strip()
+        summary = preview.decode("utf-8", errors="ignore").strip()
     except Exception:
         pass
     payload = {
         "id": f"kn_{uuid4().hex[:8]}",
         "collection_id": collection_id,
         "name": safe_name,
-        "summary": summary or f"上传文件 · {len(contents)} bytes",
+        "summary": summary or f"上传文件 · {total_bytes} bytes",
         "type": (Path(safe_name).suffix.lstrip(".") or "file").upper(),
         "source": "上传",
         "tags": [],
         "status": "pending",
     }
     await get_store().upsert_knowledge_item(payload)
-    return {"id": payload["id"], "filename": safe_name, "bytes": len(contents), "stored_at": str(target)}
+    return {"id": payload["id"], "filename": safe_name, "bytes": total_bytes, "stored_at": str(target)}
 
 
 @router.delete("/items/{item_id}")
 async def delete_item(item_id: str):
-    store = get_store()
-    await store.connect()
-    assert store._conn is not None
-    async with store._lock:
-        cursor = await store._conn.execute("DELETE FROM knowledge_items WHERE id = ?", (item_id,))
-        await store._conn.commit()
-        changes = cursor.rowcount
-        await cursor.close()
-    if not changes:
+    if not await get_store().delete_knowledge_item(item_id):
         raise HTTPException(404, "item not found")
     return {"deleted": item_id}
 
@@ -191,11 +208,16 @@ async def export_items_csv(
     writer.writerow(["id", "collection_id", "name", "type", "source", "tags", "usage_count", "status", "summary", "updated_at"])
     for it in items:
         writer.writerow([
-            it["id"], it.get("collection_id") or "", it["name"], it.get("type") or "",
-            it.get("source") or "", ";".join(it.get("tags", [])),
-            it.get("usage_count", 0), it.get("status", ""),
-            (it.get("summary") or "").replace("\n", " ")[:500],
-            it.get("updated_at") or "",
+            escape_csv_cell(it["id"]),
+            escape_csv_cell(it.get("collection_id") or ""),
+            escape_csv_cell(it["name"]),
+            escape_csv_cell(it.get("type") or ""),
+            escape_csv_cell(it.get("source") or ""),
+            escape_csv_cell(";".join(it.get("tags", []))),
+            it.get("usage_count", 0),
+            escape_csv_cell(it.get("status", "")),
+            escape_csv_cell((it.get("summary") or "").replace("\n", " ")[:500]),
+            escape_csv_cell(it.get("updated_at") or ""),
         ])
     buf.seek(0)
     filename = f"knowledge-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.csv"

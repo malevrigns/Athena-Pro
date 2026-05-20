@@ -7,6 +7,8 @@ yet — the front-end is expected to show its empty states in that case.
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -14,7 +16,9 @@ from typing import Any, Literal
 
 import aiosqlite
 from fastapi import APIRouter, Query
+from fastapi.responses import StreamingResponse
 
+from athena.api.csv_utils import escape_csv_cell
 from athena.persistence import get_store
 
 
@@ -195,6 +199,50 @@ async def cost_by_task(range: str = Query("this-month"), limit: int = Query(20, 
             "updated_at": v["last_ts"],
         })
     return {"items": items}
+
+
+@router.get("/tasks.csv")
+async def cost_tasks_csv(
+    range: str = Query("this-month"),
+    limit: int = Query(10_000, ge=1, le=10_000),
+    task_id: str | None = Query(None),
+):
+    data = await cost_by_task(range=range, limit=limit, task_id=task_id)
+    buf = io.StringIO()
+    buf.write("\ufeff")
+    writer = csv.writer(buf)
+    writer.writerow([
+        "task_id",
+        "task_name",
+        "node",
+        "model",
+        "calls",
+        "input_tokens",
+        "output_tokens",
+        "cost_usd",
+        "pct",
+        "updated_at",
+    ])
+    for row in data["items"]:
+        writer.writerow([
+            escape_csv_cell(row["task_id"]),
+            escape_csv_cell(row["task_name"]),
+            escape_csv_cell(row["node"]),
+            escape_csv_cell(row["model"]),
+            row["calls"],
+            row["input_tokens"],
+            row["output_tokens"],
+            row["cost_usd"],
+            row["pct"],
+            escape_csv_cell(row["updated_at"]),
+        ])
+    buf.seek(0)
+    filename = f"cost-tasks-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.csv"
+    return StreamingResponse(
+        iter([buf.getvalue().encode("utf-8")]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/tips")

@@ -22,6 +22,7 @@ const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
 const selectedTaskId = ref<string>('')
 const sourceFilter = ref<'all' | 'high' | 'medium' | 'low'>('all')
+const focusMode = ref(false)
 
 onMounted(async () => {
   if (!task.tasks.length) await task.refreshTasks()
@@ -176,6 +177,14 @@ async function copyMarkdown() {
   await navigator.clipboard.writeText(reportMarkdown.value)
   ElMessage.success('已复制 Markdown')
 }
+
+function showMissingReportAction(action: string) {
+  ElMessage.info(`${action} 尚未接入后端接口`)
+}
+
+function toggleFocusMode() {
+  focusMode.value = !focusMode.value
+}
 </script>
 
 <template>
@@ -233,13 +242,13 @@ async function copyMarkdown() {
           </div>
           <div class="action-row">
             <button class="btn-secondary" @click="copyMarkdown"><ElIcon><Share /></ElIcon><span>复制全文</span></button>
-            <button class="btn-secondary square"><ElIcon><MoreFilled /></ElIcon></button>
+            <button class="btn-secondary square" @click="showMissingReportAction('更多报告操作')"><ElIcon><MoreFilled /></ElIcon></button>
           </div>
         </div>
       </section>
 
       <!-- 3-col layout -->
-      <section class="rep-grid">
+      <section class="rep-grid" :class="{ focus: focusMode }">
         <!-- TOC derived from real report -->
         <aside class="card rep-toc">
           <header class="rep-toc-head"><h3>目录</h3></header>
@@ -269,8 +278,8 @@ async function copyMarkdown() {
               </div>
             </div>
             <div class="rep-body-actions">
-              <button class="ico-btn-sm"><ElIcon><Star /></ElIcon></button>
-              <button class="ico-btn-sm"><ElIcon><FullScreen /></ElIcon></button>
+              <button class="ico-btn-sm" @click="showMissingReportAction('收藏报告')"><ElIcon><Star /></ElIcon></button>
+              <button class="ico-btn-sm" @click="toggleFocusMode"><ElIcon><FullScreen /></ElIcon></button>
             </div>
           </header>
 
@@ -318,7 +327,7 @@ async function copyMarkdown() {
               <ElOption label="中等置信度" value="medium" />
               <ElOption label="低置信度" value="low" />
             </ElSelect>
-            <button class="btn-secondary square"><ElIcon><Filter /></ElIcon></button>
+            <button class="btn-secondary square" @click="sourceFilter = 'all'"><ElIcon><Filter /></ElIcon></button>
           </div>
           <ElEmpty v-if="!filteredCitations.length" :image-size="48" description="没有匹配的来源" />
           <div class="src-list">
@@ -389,6 +398,13 @@ async function copyMarkdown() {
   grid-template-columns: 220px minmax(0, 1fr) 320px;
   gap: 16px;
   align-items: start;
+}
+.rep-grid.focus {
+  grid-template-columns: minmax(0, 1fr);
+}
+.rep-grid.focus .rep-toc,
+.rep-grid.focus .rep-sources {
+  display: none;
 }
 
 /* TOC */

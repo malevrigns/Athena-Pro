@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ArrowRight, CloseBold, Promotion } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useTaskStore } from '@/stores/task'
 import { useSessionStore } from '@/stores/session'
 
+const MIN_QUESTION_LENGTH = 8
+const router = useRouter()
 const store = useTaskStore()
 const session = useSessionStore()
 const question = ref('调研 2026 年大模型 Agent 框架的发展现状、技术路线和企业落地场景')
@@ -18,26 +21,39 @@ const presets = [
 ]
 
 const charCount = computed(() => question.value.length)
-const canSubmit = computed(() => charCount.value >= 8 && !store.loading && !store.isRunning)
+const canSubmit = computed(() => charCount.value >= MIN_QUESTION_LENGTH && !store.loading && !store.isRunning)
 
 async function submit() {
-  if (!canSubmit.value) return
+  if (store.loading || store.isRunning) return
+  const trimmed = question.value.trim()
+  if (trimmed.length < MIN_QUESTION_LENGTH) {
+    ElMessage.warning(`请至少输入 ${MIN_QUESTION_LENGTH} 个字符后再开始研究`)
+    return
+  }
   if (session.config?.require_auth && !session.hasApiKey) {
     ElMessage.warning('请先到「系统设置」配置 API Key')
+    router.push({ name: 'settings', query: { next: '/workbench' } })
     return
   }
   try {
-    await store.start(question.value, session.userId)
+    await store.start(trimmed, session.userId)
     if (store.error) ElMessage.error(store.error)
-    else ElMessage.success(`任务已启动 · ${store.current?.id || ''}`)
+    else if (store.current?.id) {
+      ElMessage.success(`任务已启动 · ${store.current.id}`)
+      router.push(`/workbench/${store.current.id}`)
+    }
   } catch (err) {
     ElMessage.error((err as Error).message)
   }
 }
 
 async function stop() {
-  await store.stop()
-  ElMessage.info('已发送中断信号')
+  try {
+    await store.stop()
+    ElMessage.info('已发送中断信号')
+  } catch (err) {
+    ElMessage.error((err as Error).message)
+  }
 }
 </script>
 
@@ -96,7 +112,7 @@ async function stop() {
           size="large"
           :icon="store.isRunning ? Promotion : ArrowRight"
           :loading="store.loading || store.isRunning"
-          :disabled="!canSubmit"
+          :disabled="store.loading || store.isRunning"
           @click="submit"
         >
           {{ store.isRunning ? '研究中…' : '开始研究' }}

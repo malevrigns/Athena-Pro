@@ -10,6 +10,7 @@ const LS = {
   theme: 'athena.theme',
   themeMigration: 'athena.themeMigration.v5_3',
   preferredFormat: 'athena.exportFormat',
+  apiBase: 'athena.apiBase',
 }
 
 // One-time migration: force light as the default for the new design-spec UI.
@@ -25,7 +26,7 @@ export const useSessionStore = defineStore('session', () => {
   const budgetUsd = ref<number>(Number(localStorage.getItem(LS.budget) || '5'))
   const theme = ref<'light' | 'dark'>((localStorage.getItem(LS.theme) as 'light' | 'dark') || 'light')
   const exportFormat = ref<'md' | 'html' | 'pdf' | 'docx'>((localStorage.getItem(LS.preferredFormat) as 'md' | 'html' | 'pdf' | 'docx') || 'md')
-  const apiBase = ref(import.meta.env.VITE_API_BASE_URL || '')
+  const apiBase = ref(localStorage.getItem(LS.apiBase) || import.meta.env.VITE_API_BASE_URL || '')
 
   const config = ref<ConfigSnapshot | null>(null)
   const health = ref<HealthSnapshot | null>(null)
@@ -42,6 +43,7 @@ export const useSessionStore = defineStore('session', () => {
     localStorage.setItem(LS.budget, String(budgetUsd.value))
     localStorage.setItem(LS.theme, theme.value)
     localStorage.setItem(LS.preferredFormat, exportFormat.value)
+    localStorage.setItem(LS.apiBase, apiBase.value)
   }
 
   function setTheme(value: 'light' | 'dark') {

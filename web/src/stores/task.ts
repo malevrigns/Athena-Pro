@@ -1,14 +1,14 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import {
-  buildDownloadUrl,
   createTask,
+  downloadFile,
   exportReport,
   getTask,
   interruptTask,
   listTasks,
-  openTaskStream,
 } from '@/api/client'
+import { openTaskStream } from '@/api/stream'
 import type {
   Finding,
   FinalReport,
@@ -39,6 +39,8 @@ export const useTaskStore = defineStore('task', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const lastExport = ref<{ format: string; url: string; filename: string } | null>(null)
+  const lastSeq = ref(0)
+  let requestGeneration = 0
 
   const status = computed<TaskStatus>(() => current.value?.status ?? 'created')
   const plan = computed<ResearchPlan | null>(() => current.value?.plan ?? null)
@@ -75,8 +77,11 @@ export const useTaskStore = defineStore('task', () => {
   })
 
   function applyEvent(event: StreamEvent) {
-    events.value.push(event)
     if (!current.value) return
+    if (event.task_id !== current.value.id) return
+    if (event.seq > 0 && event.seq <= lastSeq.value) return
+    if (event.seq > 0) lastSeq.value = event.seq
+    events.value.push(event)
     const payload = event.payload as Record<string, unknown>
     if (event.type === 'status') {
       current.value.status = payload.status as TaskStatus
@@ -119,38 +124,49 @@ export const useTaskStore = defineStore('task', () => {
     supervisorIterations.value = []
     lastExport.value = null
     error.value = null
+    lastSeq.value = 0
   }
 
   async function start(question: string, userId = 'demo-user') {
+    const generation = ++requestGeneration
     loading.value = true
     closeStream()
     _reset()
     try {
       const response = await createTask(question, userId)
+      if (generation !== requestGeneration) return
       current.value = response.snapshot
+      lastSeq.value = response.snapshot.events_count
       stream.value = openTaskStream(
         response.task_id,
         applyEvent,
         (err) => {
           error.value = err instanceof Error ? err.message : String(err)
         },
+        undefined,
+        lastSeq.value,
       )
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err)
+      throw err
     } finally {
       loading.value = false
     }
   }
 
   async function load(id: string, subscribe = true) {
+    const generation = ++requestGeneration
     closeStream()
     _reset()
     try {
-      current.value = await getTask(id)
+      const snapshot = await getTask(id)
+      if (generation !== requestGeneration) return
+      current.value = snapshot
+      lastSeq.value = snapshot.events_count
       if (subscribe && current.value && !['done', 'failed', 'cancelled'].includes(current.value.status)) {
         stream.value = openTaskStream(id, applyEvent, (err) => {
           error.value = err instanceof Error ? err.message : String(err)
-        })
+        }, undefined, lastSeq.value)
       }
       if (current.value?.final_report?.markdown) writerStream.value = current.value.final_report.markdown
     } catch (err) {
@@ -168,21 +184,16 @@ export const useTaskStore = defineStore('task', () => {
 
   async function stop() {
     if (!current.value) return
-    await interruptTask(current.value.id)
-    closeStream()
+    const stopped = await interruptTask(current.value.id)
+    if (!stopped) throw new Error('task not found or cannot be interrupted')
+    current.value.status = 'cancelled'
   }
 
   async function downloadReport(fmt: 'md' | 'html' | 'pdf' | 'docx') {
     if (!current.value) return
     const resp = await exportReport(current.value.id, fmt)
-    const url = buildDownloadUrl(resp.download_url)
+    const url = await downloadFile(resp.download_url, resp.filename)
     lastExport.value = { format: fmt, url, filename: resp.filename }
-    const link = document.createElement('a')
-    link.href = url
-    link.download = resp.filename
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
     return resp
   }
 

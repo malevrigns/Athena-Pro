@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Search, View, MoreFilled, Refresh, CaretRight, Filter,
 } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { useTaskStore } from '@/stores/task'
 import { useEntrance, runCountUp } from '@/composables/useAnime'
 import { nextTick } from 'vue'
@@ -12,9 +13,11 @@ const router = useRouter()
 const task = useTaskStore()
 const search = ref('')
 const status = ref('all')
-const dateFrom = ref('')
-const dateTo = ref('')
-const pageSize = ref('10')
+const dateFrom = ref<Date | null>(null)
+const dateTo = ref<Date | null>(null)
+const pageSize = ref(10)
+const currentPage = ref(1)
+const showAdvancedFilters = ref(false)
 
 useEntrance('.hist-stat')
 useEntrance('.hist-row', { delay: (_el: HTMLElement, i: number) => 200 + i * 40 })
@@ -47,7 +50,22 @@ const filtered = computed(() => {
       return true
     })
   }
+  if (dateFrom.value || dateTo.value) {
+    res = res.filter((t) => isInDateRange(t.created_at || t.updated_at))
+  }
   return res
+})
+
+const totalPages = computed(() => Math.max(1, Math.ceil(filtered.value.length / pageSize.value)))
+const paged = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return filtered.value.slice(start, start + pageSize.value)
+})
+const visiblePages = computed(() => {
+  const pages: number[] = []
+  const end = Math.min(totalPages.value, 5)
+  for (let page = 1; page <= end; page++) pages.push(page)
+  return pages
 })
 
 function statusTag(s: string) {
@@ -70,7 +88,59 @@ function fmtDuration(min: number) {
   if (min < 60) return `${min}分钟`
   return `${Math.floor(min/60)}小时${min%60}分钟`
 }
-function reset() { search.value = ''; status.value = 'all'; dateFrom.value = ''; dateTo.value = '' }
+function reset() {
+  search.value = ''
+  status.value = 'all'
+  dateFrom.value = null
+  dateTo.value = null
+  currentPage.value = 1
+}
+
+function isInDateRange(value?: string) {
+  if (!value) return false
+  const time = new Date(value).getTime()
+  if (Number.isNaN(time)) return false
+  const from = dateFrom.value ? startOfDay(dateFrom.value).getTime() : -Infinity
+  const to = dateTo.value ? endOfDay(dateTo.value).getTime() : Infinity
+  return time >= from && time <= to
+}
+
+function startOfDay(value: Date) {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate())
+}
+
+function endOfDay(value: Date) {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 23, 59, 59, 999)
+}
+
+function setPage(page: number) {
+  currentPage.value = Math.min(Math.max(1, page), totalPages.value)
+}
+
+function openTask(id: string) {
+  router.push(`/workbench/${id}`)
+}
+
+async function resumeTask(id: string) {
+  await task.load(id, false)
+  if (task.error) {
+    ElMessage.error(task.error)
+    return
+  }
+  router.push('/plan-review')
+}
+
+function showMoreActions(id: string) {
+  ElMessage.info(`更多操作尚未接入后端菜单接口，任务 ID: ${id}`)
+}
+
+function toggleAdvancedFilters() {
+  showAdvancedFilters.value = !showAdvancedFilters.value
+}
+
+watch([search, status, dateFrom, dateTo, pageSize], () => {
+  currentPage.value = 1
+})
 
 // Right column stats
 const totalCount = computed(() => all.value.length)
@@ -105,7 +175,7 @@ const auditRecords = [
               <ElOption v-for="o in statusOptions" :key="o.value" :label="o.label" :value="o.value" />
             </ElSelect>
           </div>
-          <div class="filter-field">
+          <div v-show="showAdvancedFilters" class="filter-field">
             <span class="filter-label">创建时间</span>
             <ElDatePicker
               v-model="dateFrom" type="date" placeholder="开始日期" size="default"
@@ -118,7 +188,7 @@ const auditRecords = [
             />
           </div>
           <button class="btn-secondary" @click="reset"><ElIcon><Refresh /></ElIcon><span>重置</span></button>
-          <button class="btn-secondary"><ElIcon><Filter /></ElIcon><span>更多筛选</span></button>
+          <button class="btn-secondary" @click="toggleAdvancedFilters"><ElIcon><Filter /></ElIcon><span>更多筛选</span></button>
         </section>
 
         <!-- Table -->
@@ -131,7 +201,7 @@ const auditRecords = [
             <div>耗时</div>
             <div>操作</div>
           </div>
-          <div v-for="t in filtered" :key="t.id" class="td-row hist-row" @click="router.push(`/workbench/${t.id}`)">
+          <div v-for="t in paged" :key="t.id" class="td-row hist-row" @click="openTask(t.id)">
             <div class="td-task">
               <div class="td-icon" :data-color="statusDot(t.status)"><span /></div>
               <div>
@@ -150,9 +220,9 @@ const auditRecords = [
             <div class="td-cost">${{ (t.cost_usd || 0).toFixed(2) }}</div>
             <div class="td-duration">{{ fmtDuration(Math.max(10, Math.floor((t.cost_usd || 0) * 6))) }}</div>
             <div class="td-actions">
-              <button v-if="t.status === 'waiting_review'" class="resume-btn">恢复</button>
-              <button class="td-ico-btn" v-else><ElIcon><View /></ElIcon></button>
-              <button class="td-ico-btn"><ElIcon><MoreFilled /></ElIcon></button>
+              <button v-if="t.status === 'waiting_review'" class="resume-btn" @click.stop="resumeTask(t.id)">恢复</button>
+              <button class="td-ico-btn" v-else @click.stop="openTask(t.id)"><ElIcon><View /></ElIcon></button>
+              <button class="td-ico-btn" @click.stop="showMoreActions(t.id)"><ElIcon><MoreFilled /></ElIcon></button>
             </div>
           </div>
           <ElEmpty v-if="!filtered.length" description="没有匹配的任务" :image-size="80" />
@@ -160,20 +230,21 @@ const auditRecords = [
           <div class="hist-pager">
             <span class="pager-count">共 {{ filtered.length }} 条</span>
             <div class="pager-mid">
-              <button><ElIcon><CaretRight style="transform: rotate(180deg);" /></ElIcon></button>
-              <button class="active">1</button>
-              <button>2</button>
-              <button>3</button>
-              <button>4</button>
-              <button>5</button>
-              <span>…</span>
-              <button>5</button>
-              <button><ElIcon><CaretRight /></ElIcon></button>
+              <button :disabled="currentPage <= 1" @click="setPage(currentPage - 1)"><ElIcon><CaretRight style="transform: rotate(180deg);" /></ElIcon></button>
+              <button
+                v-for="page in visiblePages"
+                :key="page"
+                :class="{ active: currentPage === page }"
+                @click="setPage(page)"
+              >{{ page }}</button>
+              <span v-if="totalPages > 6">…</span>
+              <button v-if="totalPages > 5" :class="{ active: currentPage === totalPages }" @click="setPage(totalPages)">{{ totalPages }}</button>
+              <button :disabled="currentPage >= totalPages" @click="setPage(currentPage + 1)"><ElIcon><CaretRight /></ElIcon></button>
             </div>
             <ElSelect v-model="pageSize" size="default" style="width: 90px;">
-              <ElOption label="10 条/页" value="10" />
-              <ElOption label="20 条/页" value="20" />
-              <ElOption label="50 条/页" value="50" />
+              <ElOption label="10 条/页" :value="10" />
+              <ElOption label="20 条/页" :value="20" />
+              <ElOption label="50 条/页" :value="50" />
             </ElSelect>
           </div>
         </section>
@@ -225,7 +296,7 @@ const auditRecords = [
             <div class="rp-bar"><i style="width: 42%; background: var(--purple);" /></div>
             <div class="paused-meta">暂停时间:2025-05-02 16:48</div>
           </div>
-          <button class="primary-btn block-btn">恢复任务</button>
+          <button class="primary-btn block-btn" @click="resumeTask(pausedTask.id)">恢复任务</button>
         </article>
 
         <article class="card audit-card">

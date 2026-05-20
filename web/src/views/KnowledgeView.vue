@@ -179,16 +179,12 @@ async function deleteItem(id: string, name: string) {
 }
 
 // ---------- Export CSV ----------
-function exportCsv() {
-  const url = knowledgeApi.exportCsvUrl({
+async function exportCsv() {
+  await knowledgeApi.downloadCsv({
     collection_id: collectionFilter.value || undefined,
     search: search.value || undefined,
     status: status.value !== 'all' ? status.value : undefined,
   })
-  const a = document.createElement('a')
-  a.href = url
-  a.download = ''
-  document.body.appendChild(a); a.click(); a.remove()
 }
 
 const collections = [

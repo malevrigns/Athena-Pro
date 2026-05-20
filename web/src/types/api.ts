@@ -89,6 +89,7 @@ export const TaskSnapshot = z.object({
 export type TaskSnapshot = z.infer<typeof TaskSnapshot>
 
 export const StreamEvent = z.object({
+  seq: z.number().default(0),
   type: z.string(),
   task_id: z.string(),
   node: z.string().nullable().optional(),
@@ -110,6 +111,7 @@ export const ConfigSnapshot = z.object({
   has_openai_key: z.boolean(),
   has_anthropic_key: z.boolean(),
   has_tavily_key: z.boolean(),
+  has_gemma_key: z.boolean().default(false),
 })
 export type ConfigSnapshot = z.infer<typeof ConfigSnapshot>
 

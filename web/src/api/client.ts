@@ -3,20 +3,19 @@ import {
   ConfigSnapshot,
   ExportResponse,
   HealthSnapshot,
-  StreamEvent,
   TaskSnapshot,
   type ConfigSnapshot as ConfigSnapshotType,
   type ExportResponse as ExportResponseType,
   type HealthSnapshot as HealthSnapshotType,
-  type StreamEvent as StreamEventType,
   type TaskSnapshot as TaskSnapshotType,
 } from '@/types/api'
 import { useSessionStore } from '@/stores/session'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 const API_KEY_STORAGE = 'athena.apiKey'
+const API_BASE_STORAGE = 'athena.apiBase'
 
-function readApiKey(): string {
+export function readApiKey(): string {
   try {
     const direct = localStorage.getItem(API_KEY_STORAGE) || ''
     if (direct) return direct
@@ -27,8 +26,22 @@ function readApiKey(): string {
   }
 }
 
+function readApiBase(): string {
+  try {
+    const session = useSessionStore()
+    return session.apiBase || localStorage.getItem(API_BASE_STORAGE) || BASE_URL
+  } catch {
+    return localStorage.getItem(API_BASE_STORAGE) || BASE_URL
+  }
+}
+
+export function buildApiUrl(path: string): string {
+  const base = readApiBase()
+  if (!base) return path
+  return new URL(path, base).toString()
+}
+
 const baseFetch = ofetch.create({
-  baseURL: BASE_URL,
   retry: 1,
   retryDelay: 500,
   timeout: 60_000,
@@ -42,8 +55,12 @@ const baseFetch = ofetch.create({
   },
 })
 
+async function apiFetch<T>(path: string, opts: FetchOptions = {}): Promise<T> {
+  return baseFetch(buildApiUrl(path), opts) as unknown as Promise<T>
+}
+
 async function request<T>(path: string, opts: FetchOptions = {}, parser?: { parse: (x: unknown) => T }): Promise<T> {
-  const raw = await baseFetch(path, opts)
+  const raw = await apiFetch(path, opts)
   return parser ? parser.parse(raw) : (raw as T)
 }
 
@@ -56,7 +73,7 @@ export async function getConfig(): Promise<ConfigSnapshotType> {
 }
 
 export async function createTask(question: string, userId = 'demo-user'): Promise<{ task_id: string; stream_url: string; snapshot: TaskSnapshotType }> {
-  const payload = await baseFetch('/v1/research', {
+  const payload = await apiFetch<{ task_id: string; stream_url: string; snapshot: unknown }>('/v1/research', {
     method: 'POST',
     body: { question, user_id: userId },
   })
@@ -68,29 +85,46 @@ export async function getTask(id: string): Promise<TaskSnapshotType> {
 }
 
 export async function listTasks(): Promise<TaskSnapshotType[]> {
-  const raw = (await baseFetch('/v1/research')) as unknown[]
+  const raw = (await apiFetch('/v1/research')) as unknown[]
   return raw.map((x) => TaskSnapshot.parse(x))
 }
 
 export async function interruptTask(id: string): Promise<boolean> {
-  const resp = await baseFetch(`/v1/research/${id}/interrupt`, { method: 'POST' })
+  const resp = await apiFetch<{ interrupted: boolean }>(`/v1/research/${id}/interrupt`, { method: 'POST' })
   return Boolean(resp.interrupted)
 }
 
 export async function exportReport(id: string, fmt: 'md' | 'html' | 'pdf' | 'docx'): Promise<ExportResponseType> {
-  const raw = await baseFetch(`/v1/research/${id}/export`, { method: 'POST', params: { fmt } })
+  const raw = await apiFetch(`/v1/research/${id}/export`, { method: 'POST', params: { fmt } })
   return ExportResponse.parse(raw)
 }
 
-export function buildDownloadUrl(downloadPath: string): string {
+export async function downloadFile(downloadPath: string, filename: string): Promise<string> {
+  const response = await authorizedFetch(downloadPath)
+  const blobUrl = URL.createObjectURL(await response.blob())
+  triggerDownload(blobUrl, filename)
+  return blobUrl
+}
+
+async function authorizedFetch(path: string): Promise<Response> {
   const key = readApiKey()
-  const url = new URL(downloadPath, window.location.origin)
-  if (key) url.searchParams.set('api_key', key)
-  return url.pathname + '?' + url.searchParams.toString()
+  const headers = key ? { Authorization: `Bearer ${key}` } : undefined
+  const response = await fetch(buildApiUrl(path), { headers })
+  if (!response.ok) throw new Error(await response.text())
+  return response
+}
+
+function triggerDownload(url: string, filename: string): void {
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
 }
 
 export async function submitFeedback(taskId: string, rating: number, comment = ''): Promise<void> {
-  await baseFetch('/v1/feedback', { method: 'POST', body: { task_id: taskId, rating, comment } })
+  await apiFetch('/v1/feedback', { method: 'POST', body: { task_id: taskId, rating, comment } })
 }
 
 // ----- Cost dashboard -----
@@ -112,12 +146,19 @@ export interface CostTaskRow { task_id: string; task_name: string; node: string;
 export interface CostTip { title: string; desc: string; ico: string; color: string }
 
 export const costApi = {
-  summary: (range = 'this-month', taskId?: string): Promise<CostSummary> => baseFetch('/v1/cost/summary', { params: { range, ...(taskId ? { task_id: taskId } : {}) } }),
-  trend:   (range = 'this-month', mode: 'day' | 'week' = 'day', taskId?: string): Promise<CostTrend> => baseFetch('/v1/cost/trend', { params: { range, mode, ...(taskId ? { task_id: taskId } : {}) } }),
-  byModel: (range = 'this-month', taskId?: string): Promise<CostByModel> => baseFetch('/v1/cost/by-model', { params: { range, ...(taskId ? { task_id: taskId } : {}) } }),
-  byNode:  (range = 'this-month', top = 6, taskId?: string): Promise<CostByNode> => baseFetch('/v1/cost/by-node', { params: { range, top, ...(taskId ? { task_id: taskId } : {}) } }),
-  tasks:   (range = 'this-month', limit = 20, taskId?: string): Promise<{ items: CostTaskRow[] }> => baseFetch('/v1/cost/tasks', { params: { range, limit, ...(taskId ? { task_id: taskId } : {}) } }),
-  tips:    (): Promise<{ items: CostTip[] }> => baseFetch('/v1/cost/tips'),
+  summary: (range = 'this-month', taskId?: string): Promise<CostSummary> => apiFetch('/v1/cost/summary', { params: { range, ...(taskId ? { task_id: taskId } : {}) } }),
+  trend:   (range = 'this-month', mode: 'day' | 'week' = 'day', taskId?: string): Promise<CostTrend> => apiFetch('/v1/cost/trend', { params: { range, mode, ...(taskId ? { task_id: taskId } : {}) } }),
+  byModel: (range = 'this-month', taskId?: string): Promise<CostByModel> => apiFetch('/v1/cost/by-model', { params: { range, ...(taskId ? { task_id: taskId } : {}) } }),
+  byNode:  (range = 'this-month', top = 6, taskId?: string): Promise<CostByNode> => apiFetch('/v1/cost/by-node', { params: { range, top, ...(taskId ? { task_id: taskId } : {}) } }),
+  tasks:   (range = 'this-month', limit = 20, taskId?: string): Promise<{ items: CostTaskRow[] }> => apiFetch('/v1/cost/tasks', { params: { range, limit, ...(taskId ? { task_id: taskId } : {}) } }),
+  tips:    (): Promise<{ items: CostTip[] }> => apiFetch('/v1/cost/tips'),
+  downloadTasksCsv: async (range = 'this-month', taskId?: string): Promise<void> => {
+    const query = new URLSearchParams({ range })
+    if (taskId) query.set('task_id', taskId)
+    const response = await authorizedFetch(`/v1/cost/tasks.csv?${query.toString()}`)
+    const url = URL.createObjectURL(await response.blob())
+    triggerDownload(url, 'cost-tasks.csv')
+  },
 }
 
 // ----- Citation verification -----
@@ -126,9 +167,9 @@ export interface CitationListItem { number: number; title: string; url: string; 
 
 export const citationApi = {
   list: (taskId: string): Promise<{ items: CitationListItem[]; summary: Record<string, number> }> =>
-    baseFetch(`/v1/research/${taskId}/citations`),
+    apiFetch(`/v1/research/${taskId}/citations`),
   verify: (taskId: string, n: number, status: 'pass' | 'reject' | 'flag' | 'replaced', comment = ''): Promise<{ status: string }> =>
-    baseFetch(`/v1/research/${taskId}/citations/${n}/verify`, { method: 'POST', body: { status, comment, decided_by: 'human' } }),
+    apiFetch(`/v1/research/${taskId}/citations/${n}/verify`, { method: 'POST', body: { status, comment, decided_by: 'human' } }),
 }
 
 // ----- Knowledge -----
@@ -137,37 +178,37 @@ export interface KnowledgeItem { id: string; collection_id: string | null; name:
 export interface KnowledgeOverview { total_items: number; verified_items: number; verified_pct: number; hot_tags: { label: string; count: number }[]; active_tags: number }
 
 export const knowledgeApi = {
-  collections: (): Promise<{ items: KnowledgeCollection[] }> => baseFetch('/v1/knowledge/collections'),
+  collections: (): Promise<{ items: KnowledgeCollection[] }> => apiFetch('/v1/knowledge/collections'),
   createCollection: (body: Partial<KnowledgeCollection>): Promise<{ id: string }> =>
-    baseFetch('/v1/knowledge/collections', { method: 'POST', body }),
+    apiFetch('/v1/knowledge/collections', { method: 'POST', body }),
   items: (params: { collection_id?: string; search?: string; status?: string; limit?: number; offset?: number } = {}): Promise<{ items: KnowledgeItem[]; total: number; limit: number; offset: number }> =>
-    baseFetch('/v1/knowledge/items', { params }),
+    apiFetch('/v1/knowledge/items', { params }),
   createItem: (body: Partial<KnowledgeItem>): Promise<{ id: string }> =>
-    baseFetch('/v1/knowledge/items', { method: 'POST', body }),
+    apiFetch('/v1/knowledge/items', { method: 'POST', body }),
   verifyItem: (id: string): Promise<{ id: string; status: string }> =>
-    baseFetch(`/v1/knowledge/items/${id}/verify`, { method: 'POST' }),
+    apiFetch(`/v1/knowledge/items/${id}/verify`, { method: 'POST' }),
   deleteItem: (id: string): Promise<{ deleted: string }> =>
-    baseFetch(`/v1/knowledge/items/${id}`, { method: 'DELETE' }),
+    apiFetch(`/v1/knowledge/items/${id}`, { method: 'DELETE' }),
   uploadDocument: async (file: File, collectionId?: string): Promise<{ id: string; filename: string; bytes: number }> => {
     const form = new FormData()
     form.append('file', file)
-    const url = `${BASE_URL}/v1/knowledge/upload${collectionId ? `?collection_id=${encodeURIComponent(collectionId)}` : ''}`
+    const path = `/v1/knowledge/upload${collectionId ? `?collection_id=${encodeURIComponent(collectionId)}` : ''}`
     const key = readApiKey()
     const headers: Record<string, string> = {}
     if (key) headers.Authorization = `Bearer ${key}`
-    const resp = await fetch(url, { method: 'POST', body: form, headers })
+    const resp = await fetch(buildApiUrl(path), { method: 'POST', body: form, headers })
     if (!resp.ok) throw new Error(await resp.text())
     return resp.json()
   },
-  overview: (): Promise<KnowledgeOverview> => baseFetch('/v1/knowledge/overview'),
+  overview: (): Promise<KnowledgeOverview> => apiFetch('/v1/knowledge/overview'),
   tags: (limit = 20): Promise<{ items: { label: string; count: number }[] }> =>
-    baseFetch('/v1/knowledge/tags', { params: { limit } }),
-  exportCsvUrl: (params: { collection_id?: string; search?: string; status?: string } = {}): string => {
-    const key = readApiKey()
-    const u = new URL(`${BASE_URL || window.location.origin}/v1/knowledge/items.csv`)
-    Object.entries(params).forEach(([k, v]) => { if (v) u.searchParams.set(k, String(v)) })
-    if (key) u.searchParams.set('api_key', key)
-    return u.pathname + '?' + u.searchParams.toString()
+    apiFetch('/v1/knowledge/tags', { params: { limit } }),
+  downloadCsv: async (params: { collection_id?: string; search?: string; status?: string } = {}): Promise<void> => {
+    const query = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => { if (value) query.set(key, String(value)) })
+    const suffix = query.toString() ? `?${query.toString()}` : ''
+    const response = await authorizedFetch(`/v1/knowledge/items.csv${suffix}`)
+    triggerDownload(URL.createObjectURL(await response.blob()), 'knowledge.csv')
   },
 }
 
@@ -175,12 +216,27 @@ export const knowledgeApi = {
 export interface Announcement { id: string; date: string; title: string; desc: string }
 export interface QuickStartLink { label: string; url: string }
 export const miscApi = {
-  announcements: (limit = 5): Promise<{ items: Announcement[] }> => baseFetch('/v1/announcements', { params: { limit } }),
-  quickStart:    (): Promise<{ items: QuickStartLink[] }> => baseFetch('/v1/quick-start'),
+  announcements: (limit = 5): Promise<{ items: Announcement[] }> => apiFetch('/v1/announcements', { params: { limit } }),
+  quickStart:    (): Promise<{ items: QuickStartLink[] }> => apiFetch('/v1/quick-start'),
+}
+
+export interface NotificationItem {
+  id: string
+  kind: string
+  title: string
+  desc: string
+  level: string
+  task_id: string
+  route: string
+  created_at: string
+}
+export const notificationApi = {
+  list: (limit = 20): Promise<{ items: NotificationItem[]; unread: number }> =>
+    apiFetch('/v1/notifications', { params: { limit } }),
 }
 
 export async function pauseTask(id: string): Promise<boolean> {
-  const resp = await baseFetch(`/v1/research/${id}/pause`, { method: 'POST' })
+  const resp = await apiFetch<{ interrupted: boolean }>(`/v1/research/${id}/pause`, { method: 'POST' })
   return Boolean(resp.interrupted)
 }
 
@@ -191,65 +247,8 @@ export interface ReviewBody {
   revised_topics?: { id: string; title: string; question: string; rationale?: string; search_queries: string[]; priority: number }[]
 }
 export async function submitReview(taskId: string, body: ReviewBody): Promise<{ task_id: string; approved: boolean }> {
-  return baseFetch(`/v1/research/${taskId}/review`, {
+  return apiFetch(`/v1/research/${taskId}/review`, {
     method: 'POST',
     body: { task_id: taskId, ...body },
   })
-}
-
-/**
- * SSE stream using fetch + ReadableStream so we can attach the Authorization header.
- * EventSource cannot set headers, so we don't use it.
- */
-export function openTaskStream(taskId: string, onEvent: (event: StreamEventType) => void, onError?: (err: unknown) => void, signal?: AbortSignal): { close: () => void } {
-  const controller = new AbortController()
-  if (signal) signal.addEventListener('abort', () => controller.abort())
-  const key = readApiKey()
-  const url = `${BASE_URL}/v1/research/${taskId}/stream${key ? `?api_key=${encodeURIComponent(key)}` : ''}`
-
-  ;(async () => {
-    try {
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: key ? { Authorization: `Bearer ${key}`, Accept: 'text/event-stream' } : { Accept: 'text/event-stream' },
-        signal: controller.signal,
-      })
-      if (!response.ok || !response.body) {
-        throw new Error(`stream open failed: ${response.status}`)
-      }
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        let idx: number
-        while ((idx = buffer.indexOf('\n\n')) !== -1) {
-          const chunk = buffer.slice(0, idx)
-          buffer = buffer.slice(idx + 2)
-          for (const line of chunk.split('\n')) {
-            if (!line.startsWith('data:')) continue
-            const data = line.slice(5).trim()
-            if (!data) continue
-            try {
-              onEvent(StreamEvent.parse(JSON.parse(data)))
-            } catch (err) {
-              console.warn('[athena] failed to parse SSE event', err, data)
-            }
-          }
-        }
-      }
-    } catch (err) {
-      if ((err as DOMException)?.name === 'AbortError') return
-      onError?.(err)
-    }
-  })()
-
-  return {
-    close() {
-      controller.abort()
-    },
-  }
 }

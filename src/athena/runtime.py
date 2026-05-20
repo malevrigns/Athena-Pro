@@ -133,17 +133,23 @@ class RuntimeStore:
             try:
                 payload = json.loads(row["state_json"])
                 snapshot = TaskSnapshot.model_validate(payload["snapshot"])
+                snapshot.status = TaskStatus(row["status"])
                 result.append(snapshot)
             except Exception:
                 continue
         return result
 
-    async def stream(self, task_id: str, replay: bool = True) -> AsyncIterator[StreamEvent]:
+    async def stream(
+        self,
+        task_id: str,
+        replay: bool = True,
+        after_seq: int = 0,
+    ) -> AsyncIterator[StreamEvent]:
         await self.ensure_started()
         # Ensure replay history is loaded from disk if this is a cold start.
         if task_id not in self.states:
             await self._rehydrate(task_id)
-        async for event in bus.subscribe(task_id, replay=replay):
+        async for event in bus.subscribe(task_id, replay=replay, after_seq=after_seq):
             yield event
 
 

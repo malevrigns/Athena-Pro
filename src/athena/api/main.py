@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import time
 from collections import defaultdict, deque
@@ -40,7 +41,7 @@ _start_time = time.monotonic()
 
 async def _verify_auth(request: Request) -> None:
     settings = get_settings()
-    if not settings.require_auth or settings.env == "dev":
+    if not settings.require_auth:
         return
     # Static assets / health are open by design — handled in middleware below.
     expected = settings.api_key
@@ -51,9 +52,7 @@ async def _verify_auth(request: Request) -> None:
     token = ""
     if header.lower().startswith("bearer "):
         token = header.split(" ", 1)[1].strip()
-    if not token:
-        token = request.query_params.get("api_key", "")
-    if not token or token != expected:
+    if not token or not hmac.compare_digest(token, expected):
         raise HTTPException(status_code=401, detail="invalid or missing api key")
 
 
@@ -100,8 +99,6 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Athena Pro API", version=API_VERSION, lifespan=lifespan)
 
     origins = list(settings.allowed_origins)
-    if settings.env == "dev" and "*" not in origins:
-        origins.append("*")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
@@ -116,9 +113,11 @@ def create_app() -> FastAPI:
     from athena.api.citations import router as cite_router
     from athena.api.knowledge import router as kn_router
     from athena.api.misc import router as misc_router
+    from athena.api.notifications import router as notification_router
     app.include_router(cost_router, dependencies=[Depends(_verify_auth)])
     app.include_router(cite_router, dependencies=[Depends(_verify_auth)])
     app.include_router(kn_router, dependencies=[Depends(_verify_auth)])
+    app.include_router(notification_router, dependencies=[Depends(_verify_auth)])
     app.include_router(misc_router)  # announcements open by design
 
     auth_dep = Depends(_verify_auth)
@@ -209,8 +208,8 @@ def create_app() -> FastAPI:
         return [event.model_dump(mode="json") for event in state.events]
 
     @app.get("/v1/research/{task_id}/stream")
-    async def stream(task_id: str, request: Request):
-        # Auth via header OR ?api_key= since EventSource cannot set headers.
+    async def stream(task_id: str, request: Request, after_seq: int = 0):
+        # The web client uses fetch streaming so Authorization headers are available.
         await _verify_auth(request)
         state = await runtime_store.get(task_id)
         if not state:
@@ -219,7 +218,7 @@ def create_app() -> FastAPI:
         async def gen():
             yield ":\n\n"  # initial comment to open the stream
             try:
-                async for event in runtime_store.stream(task_id, replay=True):
+                async for event in runtime_store.stream(task_id, replay=True, after_seq=after_seq):
                     if await request.is_disconnected():
                         break
                     yield "data: " + json.dumps(event.model_dump(mode="json"), ensure_ascii=False, default=str) + "\n\n"

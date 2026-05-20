@@ -11,6 +11,7 @@ import { miscApi } from '@/api/client'
 const router = useRouter()
 const task = useTaskStore()
 const session = useSessionStore()
+const MIN_QUESTION_LENGTH = 8
 
 const question = ref('')
 const heroTitleRef = ref<HTMLElement | null>(null)
@@ -60,19 +61,34 @@ const recent = computed(() =>
   [...task.tasks].sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || '')).slice(0, 5),
 )
 
-const canSubmit = computed(() => question.value.trim().length >= 8 && !task.loading && !task.isRunning)
+const hasEnoughQuestion = computed(() => question.value.trim().length >= MIN_QUESTION_LENGTH)
+const canSubmit = computed(() => !task.loading && !task.isRunning)
 
 async function submit() {
   if (!canSubmit.value) return
+  const trimmed = question.value.trim()
+  if (!hasEnoughQuestion.value) {
+    ElMessage.warning(`请至少输入 ${MIN_QUESTION_LENGTH} 个字符后再开始研究`)
+    focusHeroInput()
+    return
+  }
   if (session.config?.require_auth && !session.hasApiKey) {
     ElMessage.warning('请先到「设置」配置 API Key')
+    router.push({ name: 'settings', query: { next: '/' } })
     return
   }
   // Submit button click → ripple
   buttonRipple()
-  await task.start(question.value.trim(), session.userId)
-  if (task.error) ElMessage.error(task.error)
-  else if (task.current?.id) router.push(`/workbench/${task.current.id}`)
+  try {
+    await task.start(trimmed, session.userId)
+    if (task.error) {
+      ElMessage.error(task.error)
+      return
+    }
+    if (task.current?.id) router.push(`/workbench/${task.current.id}`)
+  } catch (err) {
+    ElMessage.error((err as Error).message)
+  }
 }
 
 function pickSuggestion(t: typeof suggestions[number], idx: number) {
@@ -110,6 +126,11 @@ function buttonRipple() {
     targets: btn,
     scale: [{ value: .94, duration: 100 }, { value: 1, duration: 240, easing: 'easeOutElastic(1, .6)' }],
   })
+}
+
+function focusHeroInput() {
+  const ta = heroInputRef.value?.querySelector('textarea') as HTMLTextAreaElement | null
+  ta?.focus()
 }
 
 function animateCountUp() {

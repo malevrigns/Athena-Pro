@@ -163,6 +163,7 @@ class TaskSnapshot(BaseModel):
 
 
 class StreamEvent(BaseModel):
+    seq: int = 0
     type: str
     task_id: str
     node: str | None = None

@@ -26,13 +26,12 @@ services:
       ATHENA_MAX_BUDGET_USD: ${ATHENA_MAX_BUDGET_USD:-5}
       ATHENA_HARD_TIMEOUT_SEC: ${ATHENA_HARD_TIMEOUT_SEC:-600}
       ATHENA_RATE_LIMIT_PER_MINUTE: ${ATHENA_RATE_LIMIT_PER_MINUTE:-30}
+      ATHENA_MAX_UPLOAD_BYTES: ${ATHENA_MAX_UPLOAD_BYTES:-26214400}
       ATHENA_LOG_LEVEL: ${ATHENA_LOG_LEVEL:-INFO}
     volumes:
       - athena-data:/data
     expose:
       - "8000"
-    ports:
-      - "${ATHENA_API_PORT:-8000}:8000"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
       interval: 30s

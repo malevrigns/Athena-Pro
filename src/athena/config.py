@@ -12,6 +12,11 @@ except Exception:  # pragma: no cover
     SettingsConfigDict = dict  # type: ignore
 
 
+BYTES_PER_MEBIBYTE = 1024 * 1024
+DEFAULT_MAX_UPLOAD_MIB = 25
+DEFAULT_MAX_UPLOAD_BYTES = DEFAULT_MAX_UPLOAD_MIB * BYTES_PER_MEBIBYTE
+
+
 class Settings(BaseSettings):
     """Application settings for the single-user production build.
 
@@ -67,6 +72,7 @@ class Settings(BaseSettings):
     allowed_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     rate_limit_per_minute: int = 30
+    max_upload_bytes: int = DEFAULT_MAX_UPLOAD_BYTES
 
     # Legacy switches kept for backward compatibility
     use_real_llm: bool = False
