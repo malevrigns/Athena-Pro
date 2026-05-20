@@ -129,18 +129,23 @@ class SQLiteStore:
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
+        self._connect_lock = asyncio.Lock()
         self._lock = asyncio.Lock()
         self._conn: aiosqlite.Connection | None = None
 
     async def connect(self) -> None:
         if self._conn is not None:
             return
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = await aiosqlite.connect(self.db_path)
-        await self._conn.execute("PRAGMA journal_mode=WAL;")
-        await self._conn.execute("PRAGMA synchronous=NORMAL;")
-        await self._conn.executescript(_SCHEMA)
-        await self._conn.commit()
+        async with self._connect_lock:
+            if self._conn is not None:
+                return
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            conn = await aiosqlite.connect(self.db_path)
+            await conn.execute("PRAGMA journal_mode=WAL;")
+            await conn.execute("PRAGMA synchronous=NORMAL;")
+            await conn.executescript(_SCHEMA)
+            await conn.commit()
+            self._conn = conn
 
     async def close(self) -> None:
         if self._conn is not None:

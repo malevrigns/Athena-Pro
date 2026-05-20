@@ -37,6 +37,9 @@ def _reset_runtime_singletons() -> None:
     from athena.tools.search import reset_search_cache
     import athena.persistence.sqlite_store as sqlite_store
 
+    store = sqlite_store._store
+    if store is not None and store._conn is not None:
+        asyncio.run(store.close())
     runtime_store.states.clear()
     runtime_store.abort_flags.clear()
     runtime_store.tasks.clear()

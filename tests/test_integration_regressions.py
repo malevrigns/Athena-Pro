@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -258,3 +259,49 @@ async def test_notifications_endpoint_reports_actionable_task_state(
     routes = {item["route"] for item in payload["items"]}
     assert "/plan-review" in routes
     assert "/workbench/task_failed" in routes
+
+
+def test_researcher_includes_matching_knowledge_items(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    _configure_env(monkeypatch, tmp_path)
+    asyncio.run(_assert_researcher_includes_matching_knowledge_items())
+
+
+async def _assert_researcher_includes_matching_knowledge_items():
+
+    from athena.agents.researcher import Researcher
+    from athena.persistence import get_store
+    from athena.schemas import ResearchTopic
+    from athena.tools.search import SearchClient
+
+    class EmptySearchProvider:
+        async def search(self, query: str, max_results: int = 5):
+            return []
+
+    store = get_store()
+    try:
+        await store.upsert_knowledge_item(
+            {
+                "id": "kn_sentinel",
+                "name": "ACME_KNOWLEDGE_SENTINEL RAG cost playbook",
+                "summary": "ACME_KNOWLEDGE_SENTINEL requires cache-first retrieval and per-tenant spend caps.",
+                "type": "note",
+                "source": "internal://playbook",
+                "tags": ["rag", "cost"],
+                "status": "verified",
+            }
+        )
+        topic = ResearchTopic(
+            title="RAG cost controls",
+            question="How should ACME_KNOWLEDGE_SENTINEL guide RAG cost controls?",
+            search_queries=["ACME_KNOWLEDGE_SENTINEL"],
+        )
+
+        finding = await Researcher(SearchClient(EmptySearchProvider())).run_topic(topic)
+
+        assert any(source.source_type == "internal" for source in finding.sources)
+        assert "ACME_KNOWLEDGE_SENTINEL" in "\n".join(finding.evidence)
+    finally:
+        await store.close()

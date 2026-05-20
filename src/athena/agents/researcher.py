@@ -9,6 +9,7 @@ from athena.llm_factory import get_llm
 from athena.prompts import RESEARCHER_PROMPT
 from athena.schemas import Finding, ResearchTopic, Source, TaskStatus
 from athena.state import ResearchState
+from athena.tools.knowledge import retrieve_knowledge_sources
 from athena.tools.search import SearchClient
 
 
@@ -30,6 +31,7 @@ class Researcher:
         settings = get_settings()
         llm = get_llm("researcher")
         sources: list[Source] = []
+        sources.extend(await retrieve_knowledge_sources(topic, limit=settings.search_max_results))
         queries = topic.search_queries or [topic.question]
         for query in queries[:3]:
             try:
