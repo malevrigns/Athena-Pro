@@ -11,6 +11,7 @@ import ElementPlus from 'element-plus'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import './styles/main.css'
+import './styles/shell.css'
 
 const app = createApp(App)
 app.use(createPinia())

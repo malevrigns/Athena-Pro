@@ -4,7 +4,7 @@ import { RouterView, useRoute, useRouter } from 'vue-router'
 import {
   HomeFilled, Monitor, EditPen, Document, Notebook, Folder,
   TrendCharts, Histogram, Setting, Bell, QuestionFilled, Plus,
-  Sunny, Moon,
+  Sunny, Moon, Fold, Expand,
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useTaskStore } from '@/stores/task'
@@ -16,6 +16,7 @@ const router = useRouter()
 const task = useTaskStore()
 const session = useSessionStore()
 const notifications = ref<NotificationItem[]>([])
+const sideCollapsed = ref(false)
 
 interface NavItem {
   path: string
@@ -52,6 +53,7 @@ function isActive(path: string) {
   return route.path === path || route.path.startsWith(path + '/')
 }
 function go(path: string) { router.push(path) }
+function toggleSidebar() { sideCollapsed.value = !sideCollapsed.value }
 function newTask() {
   if (route.path === '/') {
     ElMessage.info('已在新任务页')
@@ -104,12 +106,15 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :class="{ 'side-collapsed': sideCollapsed }">
     <!-- Sidebar -->
-    <aside class="app-side">
+    <aside v-show="!sideCollapsed" class="app-side" :aria-hidden="sideCollapsed" :inert="sideCollapsed">
       <div class="brand">
         <div class="brand-logo">A</div>
         <div class="brand-name">Athena</div>
+        <button class="side-collapse-btn" aria-label="隐藏导航栏" @click="toggleSidebar">
+          <ElIcon><Fold /></ElIcon>
+        </button>
       </div>
 
       <div class="nav-group">
@@ -148,7 +153,17 @@ onMounted(async () => {
     <!-- Main -->
     <main class="main">
       <header class="topbar">
-        <h1 v-html="pageTitle.replace(/ \/ /g, ' <span class=&quot;crumb-sep&quot;>/</span> <span class=&quot;crumb-light&quot;>')+'</span>'" />
+        <div class="topbar-left">
+          <button
+            v-if="sideCollapsed"
+            class="side-restore"
+            aria-label="显示导航栏"
+            @click="toggleSidebar"
+          >
+            <ElIcon><Expand /></ElIcon>
+          </button>
+          <h1 v-html="pageTitle.replace(/ \/ /g, ' <span class=&quot;crumb-sep&quot;>/</span> <span class=&quot;crumb-light&quot;>')+'</span>'" />
+        </div>
         <div class="topbar-right">
           <button class="icon-btn" :aria-label="session.isDark ? '切换浅色主题' : '切换深色主题'" @click="session.toggleTheme()">
             <ElIcon><component :is="session.isDark ? Sunny : Moon" /></ElIcon>
