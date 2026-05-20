@@ -6,6 +6,7 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useTaskStore } from '@/stores/task'
+import { auditApi, type AuditEvent } from '@/api/client'
 import { useEntrance, runCountUp } from '@/composables/useAnime'
 import { nextTick } from 'vue'
 
@@ -18,12 +19,14 @@ const dateTo = ref<Date | null>(null)
 const pageSize = ref(10)
 const currentPage = ref(1)
 const showAdvancedFilters = ref(false)
+const auditRecords = ref<AuditEvent[]>([])
+const auditLoading = ref(false)
 
 useEntrance('.hist-stat')
 useEntrance('.hist-row', { delay: (_el: HTMLElement, i: number) => 200 + i * 40 })
 
 onMounted(async () => {
-  await task.refreshTasks()
+  await Promise.all([task.refreshTasks(), loadAuditRecords()])
   await nextTick()
   runCountUp('.hist-kpi-number')
 })
@@ -131,7 +134,7 @@ async function resumeTask(id: string) {
 }
 
 function showMoreActions(id: string) {
-  ElMessage.info(`更多操作尚未接入后端菜单接口，任务 ID: ${id}`)
+  router.push(`/workbench/${id}`)
 }
 
 function toggleAdvancedFilters() {
@@ -152,13 +155,32 @@ const avgCost = computed(() => {
 })
 
 const pausedTask = computed(() => all.value.find(t => t.status === 'waiting_review'))
-const auditRecords = [
-  { type: 'plan', title: '研究计划 - AI Agent 商业化路径分析', status: 'pass',  name: 'Plan Review',       date: '05-07 11:23' },
-  { type: 'cite', title: '引用验证 - 关键引用集 (48条)',       status: 'pass',  name: 'Citation Validator', date: '05-06 18:42' },
-  { type: 'plan', title: '研究计划 - 医疗影像多模态研究',       status: 'wait',  name: 'Plan Review',       date: '05-05 14:11' },
-  { type: 'cite', title: '引用验证 - RAG 技术演进 (35条)',     status: 'pass',  name: 'Citation Validator', date: '05-04 16:32' },
-  { type: 'plan', title: '研究计划 - 金融行业合规研究',         status: 'pass',  name: 'Plan Review',       date: '05-03 09:01' },
-]
+
+async function loadAuditRecords(limit = 5) {
+  auditLoading.value = true
+  try {
+    auditRecords.value = (await auditApi.events(limit)).items
+  } catch (error) {
+    ElMessage.error(`加载审计记录失败:${(error as Error).message}`)
+  } finally {
+    auditLoading.value = false
+  }
+}
+
+function auditStatus(a: AuditEvent) {
+  if (a.status === 'pass') return { ui: 'pass', label: '已通过' }
+  if (['reject', 'failed', 'low'].includes(a.status)) return { ui: 'reject', label: '已驳回' }
+  if (['flag', 'wait'].includes(a.status)) return { ui: 'wait', label: '待复核' }
+  return { ui: 'wait', label: a.status }
+}
+
+function auditActor(a: AuditEvent) {
+  return a.type === 'plan_review' ? `Plan Review · ${a.actor}` : `Citation Validator · ${a.actor}`
+}
+
+function openAudit(a: AuditEvent) {
+  router.push(a.route || `/workbench/${a.task_id}`)
+}
 </script>
 
 <template>
@@ -302,23 +324,24 @@ const auditRecords = [
         <article class="card audit-card">
           <header class="section-head">
             <h3 class="card-title">最近审批记录</h3>
-            <a class="link-mini">查看全部</a>
+            <a class="link-mini" @click="loadAuditRecords(100)">查看全部</a>
           </header>
-          <ul class="audit-list">
-            <li v-for="(a, i) in auditRecords" :key="i">
-              <span class="audit-dot" :data-status="a.status">
-                <span v-if="a.status === 'pass'">✓</span>
+          <ElEmpty v-if="!auditLoading && !auditRecords.length" description="暂无审计记录" :image-size="56" />
+          <ul v-else v-loading="auditLoading" class="audit-list">
+            <li v-for="a in auditRecords" :key="a.id" @click="openAudit(a)">
+              <span class="audit-dot" :data-status="auditStatus(a).ui">
+                <span v-if="auditStatus(a).ui === 'pass'">✓</span>
                 <span v-else>!</span>
               </span>
               <div class="audit-body">
                 <div class="audit-title">{{ a.title }}</div>
                 <div class="audit-foot">
-                  <span class="audit-status" :data-status="a.status">{{ a.status === 'pass' ? '已通过' : '待修改' }}</span>
+                  <span class="audit-status" :data-status="auditStatus(a).ui">{{ auditStatus(a).label }}</span>
                   <span class="audit-sep">·</span>
-                  <span class="audit-name">{{ a.name }}</span>
+                  <span class="audit-name">{{ auditActor(a) }}</span>
                 </div>
               </div>
-              <div class="audit-time">{{ a.date }}</div>
+              <div class="audit-time">{{ fmtDate(a.created_at) }}</div>
             </li>
           </ul>
         </article>
@@ -509,7 +532,8 @@ const auditRecords = [
 .audit-card { padding: 16px 18px; }
 .link-mini { font-size: 12px; color: var(--primary); cursor: pointer; }
 .audit-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
-.audit-list li { display: flex; align-items: flex-start; gap: 10px; }
+.audit-list li { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.audit-list li:hover .audit-title { color: var(--primary); }
 .audit-dot {
   width: 18px; height: 18px;
   border-radius: 50%;
@@ -519,6 +543,7 @@ const auditRecords = [
 }
 .audit-dot[data-status='pass'] { background: var(--green-soft); color: var(--green); }
 .audit-dot[data-status='wait'] { background: var(--orange-soft); color: var(--orange); }
+.audit-dot[data-status='reject'] { background: var(--red-soft); color: var(--red); }
 .audit-body { flex: 1; min-width: 0; }
 .audit-title {
   font-size: 12.5px; font-weight: 500; color: var(--text);
@@ -527,6 +552,7 @@ const auditRecords = [
 .audit-foot { display: flex; align-items: center; gap: 4px; margin-top: 2px; font-size: 11px; color: var(--muted); }
 .audit-status[data-status='pass'] { color: var(--green); font-weight: 600; }
 .audit-status[data-status='wait'] { color: var(--orange); font-weight: 600; }
+.audit-status[data-status='reject'] { color: var(--red); font-weight: 600; }
 .audit-sep { color: var(--muted-soft); }
 .audit-time { font-size: 11px; color: var(--muted-soft); font-family: var(--t-mono); flex-shrink: 0; }
 

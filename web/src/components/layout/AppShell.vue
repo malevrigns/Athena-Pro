@@ -52,7 +52,13 @@ function isActive(path: string) {
   return route.path === path || route.path.startsWith(path + '/')
 }
 function go(path: string) { router.push(path) }
-function newTask() { router.push('/') }
+function newTask() {
+  if (route.path === '/') {
+    ElMessage.info('已在新任务页')
+    return
+  }
+  router.push('/')
+}
 
 async function openNotifications() {
   try {

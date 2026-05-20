@@ -23,6 +23,9 @@ const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 const selectedTaskId = ref<string>('')
 const sourceFilter = ref<'all' | 'high' | 'medium' | 'low'>('all')
 const focusMode = ref(false)
+const moreDialog = ref(false)
+const FAVORITES_KEY = 'athena.reportFavorites'
+const favoriteIds = ref<Set<string>>(new Set(JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]')))
 
 onMounted(async () => {
   if (!task.tasks.length) await task.refreshTasks()
@@ -153,6 +156,7 @@ function scrollToHeading(item: TocItem) {
   activeTocId.value = item.id
   const target = document.querySelector(`#h-anchor-${item.pos}`)
   if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  ElMessage.info(`已定位章节:${item.text}`)
 }
 
 async function loadReport(id: string) {
@@ -179,11 +183,35 @@ async function copyMarkdown() {
 }
 
 function showMissingReportAction(action: string) {
-  ElMessage.info(`${action} 尚未接入后端接口`)
+  if (action === '更多报告操作') {
+    moreDialog.value = true
+    return
+  }
+  ElMessage.info(action)
 }
 
 function toggleFocusMode() {
   focusMode.value = !focusMode.value
+}
+
+const isFavorite = computed(() => Boolean(task.current?.id && favoriteIds.value.has(task.current.id)))
+
+function toggleFavorite() {
+  if (!task.current?.id) {
+    ElMessage.warning('未选中任务')
+    return
+  }
+  const next = new Set(favoriteIds.value)
+  if (next.has(task.current.id)) next.delete(task.current.id)
+  else next.add(task.current.id)
+  favoriteIds.value = next
+  localStorage.setItem(FAVORITES_KEY, JSON.stringify([...next]))
+  ElMessage.success(next.has(task.current.id) ? '已收藏报告' : '已取消收藏')
+}
+
+function openSource(url: string, number: number) {
+  window.open(url, '_blank', 'noopener,noreferrer')
+  ElMessage.info(`已打开来源 [${number}]`)
 }
 </script>
 
@@ -278,7 +306,7 @@ function toggleFocusMode() {
               </div>
             </div>
             <div class="rep-body-actions">
-              <button class="ico-btn-sm" @click="showMissingReportAction('收藏报告')"><ElIcon><Star /></ElIcon></button>
+              <button class="ico-btn-sm" :class="{ active: isFavorite }" @click="toggleFavorite"><ElIcon><Star /></ElIcon></button>
               <button class="ico-btn-sm" @click="toggleFocusMode"><ElIcon><FullScreen /></ElIcon></button>
             </div>
           </header>
@@ -331,7 +359,7 @@ function toggleFocusMode() {
           </div>
           <ElEmpty v-if="!filteredCitations.length" :image-size="48" description="没有匹配的来源" />
           <div class="src-list">
-            <article v-for="s in filteredCitations" :key="s.number" class="src-card">
+            <article v-for="s in filteredCitations" :key="s.number" class="src-card" @click="openSource(s.url, s.number)">
               <div class="src-head">
                 <div class="src-logo">{{ s.logo }}</div>
                 <div class="src-name">
@@ -346,12 +374,21 @@ function toggleFocusMode() {
                 <span>匹配度 {{ s.match }}%</span>
                 <div class="src-bar"><i :style="{ width: s.match + '%', background: confidenceMeta(s.confidence).color === 'green' ? 'var(--green)' : confidenceMeta(s.confidence).color === 'orange' ? 'var(--orange)' : 'var(--red)' }" /></div>
               </div>
-              <a class="src-link" :href="s.url" target="_blank" rel="noopener noreferrer">{{ s.url }}</a>
+              <a class="src-link" :href="s.url" target="_blank" rel="noopener noreferrer" @click.stop>{{ s.url }}</a>
             </article>
           </div>
         </aside>
       </section>
     </template>
+
+    <ElDialog v-model="moreDialog" title="报告操作" width="420px">
+      <div class="more-actions">
+        <ElButton @click="copyMarkdown">复制 Markdown</ElButton>
+        <ElButton @click="exportFmt('md')">导出 Markdown</ElButton>
+        <ElButton :disabled="!session.config?.export_formats?.html" @click="exportFmt('html')">导出 HTML</ElButton>
+        <ElButton @click="toggleFavorite">{{ isFavorite ? '取消收藏' : '收藏报告' }}</ElButton>
+      </div>
+    </ElDialog>
   </div>
 </template>
 
@@ -438,6 +475,7 @@ function toggleFocusMode() {
 .rep-time { font-size: 12px; color: var(--muted); font-family: var(--t-mono); }
 .rep-time code { font-family: var(--t-mono); color: var(--text-soft); }
 .rep-body-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.rep-body-actions .active { color: var(--orange); background: var(--orange-soft); }
 .ico-btn-sm {
   width: 30px; height: 30px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--surface);
@@ -518,7 +556,7 @@ function toggleFocusMode() {
 .src-filter { display: flex; gap: 6px; margin-bottom: 12px; padding: 0 6px; }
 .src-filter .btn-secondary.square { width: 38px; padding: 0; justify-content: center; }
 .src-list { display: grid; gap: 10px; max-height: 700px; overflow: auto; padding-right: 4px; }
-.src-card { padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.src-card { padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); cursor: pointer; }
 .src-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .src-logo {
   width: 26px; height: 26px; border-radius: 6px;
@@ -558,6 +596,9 @@ function toggleFocusMode() {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .src-link:hover { color: var(--primary); }
+
+.more-actions { display: grid; gap: 10px; }
+.more-actions .el-button { justify-content: flex-start; margin-left: 0; }
 
 @media (max-width: 1500px) {
   .rep-kpi { grid-template-columns: repeat(4, 1fr); }

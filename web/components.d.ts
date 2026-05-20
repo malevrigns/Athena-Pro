@@ -61,4 +61,7 @@ declare module 'vue' {
     TaskTimeline: typeof import('./src/components/task/TaskTimeline.vue')['default']
     WorkflowCanvas: typeof import('./src/components/task/WorkflowCanvas.vue')['default']
   }
+  export interface ComponentCustomProperties {
+    vLoading: typeof import('element-plus/es')['ElLoadingDirective']
+  }
 }

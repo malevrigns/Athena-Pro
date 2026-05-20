@@ -93,6 +93,7 @@ async function submit() {
 
 function pickSuggestion(t: typeof suggestions[number], idx: number) {
   question.value = `${t.title}: ${t.desc}`
+  ElMessage.info('已填入建议问题')
   // Pulse animation on click
   const el = suggestionRefs.value[idx]
   if (el) {

@@ -109,11 +109,13 @@ def create_app() -> FastAPI:
     app.add_middleware(RateLimitMiddleware, max_per_minute=settings.rate_limit_per_minute)
 
     # Auxiliary routers
+    from athena.api.audit import router as audit_router
     from athena.api.cost import router as cost_router
     from athena.api.citations import router as cite_router
     from athena.api.knowledge import router as kn_router
     from athena.api.misc import router as misc_router
     from athena.api.notifications import router as notification_router
+    app.include_router(audit_router, dependencies=[Depends(_verify_auth)])
     app.include_router(cost_router, dependencies=[Depends(_verify_auth)])
     app.include_router(cite_router, dependencies=[Depends(_verify_auth)])
     app.include_router(kn_router, dependencies=[Depends(_verify_auth)])

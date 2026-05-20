@@ -26,6 +26,15 @@ const serverCitations = ref<CitationListItem[]>([])
 const serverSummary = ref<Record<string, number>>({})
 const loading = ref(false)
 
+async function copyText(value: string | undefined, label: string) {
+  if (!value) {
+    ElMessage.warning(`没有可复制的${label}`)
+    return
+  }
+  await navigator.clipboard.writeText(value)
+  ElMessage.success(`${label}已复制`)
+}
+
 async function loadCitations() {
   if (!task.current?.id) return
   loading.value = true
@@ -223,7 +232,7 @@ function riskInfo(r: string) {
           <h2>{{ task.current?.question }}</h2>
           <div class="cc-meta">
             <span>任务 ID:<code>{{ task.current?.id }}</code></span>
-            <ElIcon class="copy-ico"><CopyDocument /></ElIcon>
+            <ElIcon class="copy-ico" @click="copyText(task.current?.id, '任务 ID')"><CopyDocument /></ElIcon>
           </div>
           <div class="cc-meta-row">
             <span v-if="task.current?.created_at">📅 创建:{{ new Date(task.current.created_at).toLocaleString('zh-CN') }}</span>
@@ -335,7 +344,7 @@ function riskInfo(r: string) {
           </div>
         </header>
         <section class="cd-block">
-          <header><h4>报告中的断言</h4><ElIcon class="copy-ico"><CopyDocument /></ElIcon></header>
+          <header><h4>报告中的断言</h4><ElIcon class="copy-ico" @click="copyText(activeCitation.citation.quote || activeCitation.citation.title, '断言')"><CopyDocument /></ElIcon></header>
           <div class="cd-quote">
             <p>{{ activeCitation.citation.quote || activeCitation.citation.title }}</p>
             <small v-if="activeCitation.citation.title">报告引用编号:[{{ activeCitation.n }}]</small>

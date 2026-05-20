@@ -86,11 +86,22 @@ watch(page, () => loadItems())
 
 // ---------- Filter actions ----------
 function clearFilters() {
+  const alreadyClear = !search.value && status.value === 'all' && tagFilter.value === 'all' && !collectionFilter.value
   search.value = ''
   status.value = 'all'
   tagFilter.value = 'all'
   collectionFilter.value = ''
   page.value = 1
+  ElMessage.info(alreadyClear ? '当前没有筛选条件' : '已清除筛选')
+}
+
+function setViewMode(mode: 'list' | 'grid') {
+  if (viewMode.value === mode) {
+    ElMessage.info(mode === 'list' ? '当前已是列表视图' : '当前已是网格视图')
+    return
+  }
+  viewMode.value = mode
+  ElMessage.info(mode === 'list' ? '已切换到列表视图' : '已切换到网格视图')
 }
 
 function pickCollection(id: string) {
@@ -298,8 +309,8 @@ const recentUpdates = [
             <h3>知识条目</h3>
             <div class="items-actions">
               <div class="view-toggle">
-                <button :class="{ active: viewMode === 'list' }" @click="viewMode = 'list'" title="列表视图"><ElIcon><List /></ElIcon></button>
-                <button :class="{ active: viewMode === 'grid' }" @click="viewMode = 'grid'" title="网格视图"><ElIcon><Grid /></ElIcon></button>
+                <button :class="{ active: viewMode === 'list' }" @click="setViewMode('list')" title="列表视图"><ElIcon><List /></ElIcon></button>
+                <button :class="{ active: viewMode === 'grid' }" @click="setViewMode('grid')" title="网格视图"><ElIcon><Grid /></ElIcon></button>
               </div>
               <button class="btn-secondary" @click="exportCsv"><ElIcon><Upload /></ElIcon><span>导出 CSV</span></button>
             </div>

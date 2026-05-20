@@ -235,6 +235,22 @@ export const notificationApi = {
     apiFetch('/v1/notifications', { params: { limit } }),
 }
 
+export interface AuditEvent {
+  id: string
+  type: 'plan_review' | 'citation_verification'
+  title: string
+  status: string
+  actor: string
+  task_id: string
+  route: string
+  created_at: string
+  detail: string
+}
+export const auditApi = {
+  events: (limit = 20): Promise<{ items: AuditEvent[]; total: number }> =>
+    apiFetch('/v1/audit/events', { params: { limit } }),
+}
+
 export async function pauseTask(id: string): Promise<boolean> {
   const resp = await apiFetch<{ interrupted: boolean }>(`/v1/research/${id}/pause`, { method: 'POST' })
   return Boolean(resp.interrupted)

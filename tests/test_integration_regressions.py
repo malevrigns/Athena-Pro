@@ -261,6 +261,51 @@ async def test_notifications_endpoint_reports_actionable_task_state(
     assert "/workbench/task_failed" in routes
 
 
+@pytest.mark.asyncio
+async def test_audit_endpoint_returns_real_review_and_citation_decisions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    _configure_env(monkeypatch, tmp_path)
+
+    from athena.api.main import create_app
+    from athena.persistence import get_store
+    from athena.state import ResearchState
+
+    app = create_app()
+    async with app.router.lifespan_context(app):
+        store = get_store()
+        state = ResearchState(task_id="task_audit", question="audit trail question")
+        state.metadata["review_decision"] = {
+            "approved": False,
+            "reviewer": "alice",
+            "comments": "need more sources",
+            "created_at": "2026-05-20T08:00:00+00:00",
+        }
+        await store.upsert_task(state)
+        await store.upsert_citation_verification(
+            "task_audit",
+            2,
+            "flag",
+            "quote does not match",
+            "bob",
+        )
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/v1/audit/events", params={"limit": 10})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 2
+    by_type = {item["type"]: item for item in payload["items"]}
+    assert by_type["plan_review"]["status"] == "reject"
+    assert by_type["plan_review"]["actor"] == "alice"
+    assert by_type["plan_review"]["task_id"] == "task_audit"
+    assert by_type["citation_verification"]["status"] == "flag"
+    assert by_type["citation_verification"]["actor"] == "bob"
+
+
 def test_researcher_includes_matching_knowledge_items(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

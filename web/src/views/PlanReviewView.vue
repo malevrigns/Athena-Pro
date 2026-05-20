@@ -44,6 +44,19 @@ const budget = computed(() => taskMeta.value?.cost_usd ? taskMeta.value.cost_usd
 const usedCost = computed(() => taskMeta.value?.cost_usd ?? 0)
 const usedPct = computed(() => Math.min(100, (usedCost.value / Math.max(0.01, budget.value)) * 100))
 
+function selectStep(index: number) {
+  if (activeStep.value === index) {
+    ElMessage.info('当前主题已选中')
+    return
+  }
+  activeStep.value = index
+  ElMessage.info(`已切换到主题 ${index + 1}`)
+}
+
+function editorAction(label: string) {
+  ElMessage.info(`方案预览为只读模式:${label}`)
+}
+
 async function copyTaskId() {
   if (!taskMeta.value?.id) return
   await navigator.clipboard.writeText(taskMeta.value.id)
@@ -125,7 +138,9 @@ async function loadCost() {
       costApi.byNode('all', 5, task.current.id),
     ])
     costSummary.value = s; costTrend.value = t; costByModel.value = m; costByNode.value = n
-  } catch (err) { /* ignore — UI shows empty */ }
+  } catch (err) {
+    ElMessage.error(`加载成本数据失败:${(err as Error).message}`)
+  }
 }
 
 const kpis = computed(() => {
@@ -272,7 +287,7 @@ const costRows = computed(() => {
             <div
               v-for="(s, i) in steps" :key="s.n"
               class="pr-step" :class="{ active: activeStep === i }"
-              @click="activeStep = i"
+              @click="selectStep(i)"
             >
               <span class="pr-step-n">{{ s.n }}</span>
               <span class="pr-step-label">{{ s.label }}</span>
@@ -280,20 +295,20 @@ const costRows = computed(() => {
           </aside>
           <div class="pr-rich">
             <div class="pr-toolbar">
-              <button>正文 ▾</button>
-              <button><b>B</b></button>
-              <button>I</button>
-              <button>U</button>
+              <button @click="editorAction('段落样式')">正文 ▾</button>
+              <button @click="editorAction('加粗')"><b>B</b></button>
+              <button @click="editorAction('斜体')">I</button>
+              <button @click="editorAction('下划线')">U</button>
               <span class="sep" />
-              <button>≡</button>
-              <button>≣</button>
+              <button @click="editorAction('项目符号')">≡</button>
+              <button @click="editorAction('编号列表')">≣</button>
               <span class="sep" />
-              <button>🔗</button>
-              <button><ElIcon><Picture /></ElIcon></button>
-              <button>⊞</button>
+              <button @click="editorAction('插入链接')">🔗</button>
+              <button @click="editorAction('插入图片')"><ElIcon><Picture /></ElIcon></button>
+              <button @click="editorAction('插入表格')">⊞</button>
               <span class="sep" />
-              <button>↶</button>
-              <button>↷</button>
+              <button @click="editorAction('撤销')">↶</button>
+              <button @click="editorAction('重做')">↷</button>
             </div>
             <div class="pr-doc" v-if="activeTopic">
               <h4>主题</h4>
