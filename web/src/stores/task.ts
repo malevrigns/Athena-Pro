@@ -59,7 +59,10 @@ export const useTaskStore = defineStore('task', () => {
     }
     return out
   })
-  const isRunning = computed(() => ['created', 'planning', 'waiting_review', 'researching', 'quality_gate', 'writing'].includes(status.value))
+  const isRunning = computed(() =>
+    current.value !== null
+    && ['created', 'planning', 'waiting_review', 'researching', 'quality_gate', 'writing'].includes(status.value)
+  )
   const isTerminal = computed(() => ['done', 'failed', 'cancelled'].includes(status.value))
   const progress = computed(() => {
     const map: Record<TaskStatus, number> = {

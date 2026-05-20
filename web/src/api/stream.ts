@@ -78,7 +78,9 @@ function emitSseChunk(chunk: string, onEvent: (event: StreamEventType) => void):
     const data = line.slice(5).trim()
     if (!data) continue
     try {
-      onEvent(StreamEvent.parse(JSON.parse(data)))
+      const raw = JSON.parse(data)
+      if (!raw.type || !raw.task_id) continue
+      onEvent(StreamEvent.parse(raw))
     } catch (err) {
       console.warn('[athena] failed to parse SSE event', err, data)
     }
