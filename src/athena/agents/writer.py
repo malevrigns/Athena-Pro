@@ -1,27 +1,56 @@
 from __future__ import annotations
 
+import asyncio
 import re
 
+from athena.config import get_settings
 from athena.costs import guard_budget, record_llm_call
 from athena.llm_factory import get_llm
 from athena.prompts import WRITER_PROMPT
-from athena.schemas import Citation, FinalReport, TaskStatus
+from athena.schemas import Citation, FinalReport, Source, TaskStatus
 from athena.state import ResearchState
+from athena.tools.quote_extract import extract_quote
 
 
-def _build_citations(state: ResearchState) -> list[Citation]:
-    seen: dict[str, Citation] = {}
+async def _build_citations(state: ResearchState) -> list[Citation]:
+    """One citation per unique source URL.
+
+    The `quote` is a passage extracted from the source's real page content
+    (grounding the finding it came from), not the raw search snippet — see
+    `tools/quote_extract`. Extraction runs concurrently and degrades to the
+    snippet whenever a page cannot be fetched.
+    """
+    seen: dict[str, tuple[Source, str]] = {}
     for finding in state.findings:
+        claim = finding.summary or finding.title
         for source in finding.sources:
             if source.url and source.url not in seen:
-                seen[source.url] = Citation(
-                    number=len(seen) + 1,
-                    source_id=source.id,
-                    title=source.title,
-                    url=source.url,
-                    quote=(source.snippet or "")[:220],
-                )
-    return list(seen.values())
+                seen[source.url] = (source, claim)
+    pairs = list(seen.values())
+    if not pairs:
+        return []
+
+    sem = asyncio.Semaphore(max(1, get_settings().max_parallel_researchers))
+
+    async def _quote(source: Source, claim: str) -> str:
+        async with sem:
+            return await extract_quote(source.url, claim, fallback=source.snippet or "")
+
+    results = await asyncio.gather(
+        *[_quote(source, claim) for source, claim in pairs],
+        return_exceptions=True,
+    )
+    citations: list[Citation] = []
+    for number, ((source, _claim), quote) in enumerate(zip(pairs, results), start=1):
+        text = quote if isinstance(quote, str) else (source.snippet or "")[:280]
+        citations.append(Citation(
+            number=number,
+            source_id=source.id,
+            title=source.title,
+            url=source.url,
+            quote=text,
+        ))
+    return citations
 
 
 def _citation_number(citations: list[Citation], url: str) -> int:
@@ -73,8 +102,11 @@ def _render_references(citations: list[Citation]) -> str:
 
 @guard_budget("writer")
 async def writer_node(state: ResearchState) -> ResearchState:
+    # Idempotent: a resumed run keeps the report a previous run wrote.
+    if state.final_report is not None:
+        return state
     state.set_status(TaskStatus.WRITING, node="writer")
-    citations = _build_citations(state)
+    citations = await _build_citations(state)
     findings_md = _findings_block(state, citations)
     llm = get_llm("writer")
     prompt = WRITER_PROMPT.render(question=state.question, findings_block=findings_md)
@@ -93,6 +125,7 @@ async def writer_node(state: ResearchState) -> ResearchState:
         citations=citations,
         quality=state.quality,
     )
-    state.set_status(TaskStatus.DONE, node="writer")
-    state.add_event("done", node="writer", final_report=state.final_report.model_dump(mode="json"))
+    # The terminal `done` event is emitted by citation_review_node (the next and
+    # final step) so citation review always reaches the client before the
+    # SSE stream closes on the `done` event.
     return state

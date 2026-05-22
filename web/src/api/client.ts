@@ -9,6 +9,21 @@ import {
   type HealthSnapshot as HealthSnapshotType,
   type TaskSnapshot as TaskSnapshotType,
 } from '@/types/api'
+import {
+  Paper,
+  PaperNote,
+  ResearchProject,
+  ToolResult,
+  ToolTraceItem,
+  type CreatePaperInput,
+  type CreatePaperNoteInput,
+  type CreateResearchProjectInput,
+  type Paper as PaperType,
+  type PaperNote as PaperNoteType,
+  type ResearchProject as ResearchProjectType,
+  type ToolResult as ToolResultType,
+  type ToolTraceItem as ToolTraceItemType,
+} from '@/types/research'
 import { useSessionStore } from '@/stores/session'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
@@ -127,6 +142,44 @@ export async function submitFeedback(taskId: string, rating: number, comment = '
   await apiFetch('/v1/feedback', { method: 'POST', body: { task_id: taskId, rating, comment } })
 }
 
+// ----- Research OS projects -----
+export const projectApi = {
+  create: (body: CreateResearchProjectInput): Promise<ResearchProjectType> =>
+    request('/v1/projects', { method: 'POST', body }, ResearchProject),
+  list: async (limit = 50): Promise<ResearchProjectType[]> => {
+    const raw = await apiFetch<unknown[]>('/v1/projects', { params: { limit } })
+    return raw.map((item) => ResearchProject.parse(item))
+  },
+  get: (projectId: string): Promise<ResearchProjectType> =>
+    request(`/v1/projects/${projectId}`, {}, ResearchProject),
+  createPaper: (projectId: string, body: CreatePaperInput): Promise<PaperType> =>
+    request(`/v1/projects/${projectId}/papers`, { method: 'POST', body }, Paper),
+  listPapers: async (projectId: string, params: { limit?: number; screening_status?: string } = {}): Promise<PaperType[]> => {
+    const raw = await apiFetch<unknown[]>(`/v1/projects/${projectId}/papers`, { params })
+    return raw.map((item) => Paper.parse(item))
+  },
+  getPaper: (projectId: string, paperId: string): Promise<PaperType> =>
+    request(`/v1/projects/${projectId}/papers/${paperId}`, {}, Paper),
+  searchPapers: (projectId: string, body: { query: string; limit?: number; task_id?: string }): Promise<ToolResultType> =>
+    request(`/v1/projects/${projectId}/paper-search`, { method: 'POST', body }, ToolResult),
+  extractPaperNote: (projectId: string, paperId: string, body: { task_id?: string } = {}): Promise<ToolResultType> =>
+    request(`/v1/projects/${projectId}/papers/${paperId}/note-extract`, { method: 'POST', body }, ToolResult),
+  createPaperNote: (projectId: string, paperId: string, body: CreatePaperNoteInput): Promise<PaperNoteType> =>
+    request(`/v1/projects/${projectId}/papers/${paperId}/notes`, { method: 'POST', body }, PaperNote),
+  listPaperNotes: async (projectId: string, paperId: string): Promise<PaperNoteType[]> => {
+    const raw = await apiFetch<unknown[]>(`/v1/projects/${projectId}/papers/${paperId}/notes`)
+    return raw.map((item) => PaperNote.parse(item))
+  },
+  trace: async (projectId: string): Promise<ToolTraceItemType[]> => {
+    const raw = await apiFetch<unknown[]>(`/v1/projects/${projectId}/trace`)
+    return raw.map((item) => ToolTraceItem.parse(item))
+  },
+  taskTrace: async (taskId: string): Promise<ToolTraceItemType[]> => {
+    const raw = await apiFetch<unknown[]>(`/v1/research/${taskId}/trace`)
+    return raw.map((item) => ToolTraceItem.parse(item))
+  },
+}
+
 // ----- Cost dashboard -----
 export interface CostSummary {
   range: string
@@ -170,6 +223,20 @@ export const citationApi = {
     apiFetch(`/v1/research/${taskId}/citations`),
   verify: (taskId: string, n: number, status: 'pass' | 'reject' | 'flag' | 'replaced', comment = ''): Promise<{ status: string }> =>
     apiFetch(`/v1/research/${taskId}/citations/${n}/verify`, { method: 'POST', body: { status, comment, decided_by: 'human' } }),
+}
+
+// ----- Citation verification settings (server-global) -----
+export interface VerifierConfig { provider: string; model: string; base_url: string; has_api_key: boolean }
+export interface CitationSettings { manual_review: boolean; verifier: VerifierConfig }
+export interface VerifierUpdate { provider: string; model: string; base_url: string; api_key?: string }
+export interface VerifierTestResult { ok: boolean; model?: string; sample?: string; detail?: string }
+
+export const settingsApi = {
+  get: (): Promise<CitationSettings> => apiFetch('/v1/settings'),
+  update: (body: { manual_review: boolean; verifier: VerifierUpdate }): Promise<CitationSettings> =>
+    apiFetch('/v1/settings', { method: 'PUT', body }),
+  testVerifier: (): Promise<VerifierTestResult> =>
+    apiFetch('/v1/settings/verifier/test', { method: 'POST' }),
 }
 
 // ----- Knowledge -----

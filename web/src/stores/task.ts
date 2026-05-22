@@ -9,12 +9,13 @@ import {
   listTasks,
 } from '@/api/client'
 import { openTaskStream } from '@/api/stream'
+import { AthenaEvent } from '@/types/api'
 import type {
+  AthenaEvent as AthenaEventType,
   Finding,
   FinalReport,
   QualityScore,
   ResearchPlan,
-  ResearchTopic,
   StreamEvent,
   TaskSnapshot,
   TaskStatus,
@@ -26,6 +27,10 @@ interface RouteEvent {
   quality?: number | null
   finding_count?: number
   topic_count?: number
+}
+
+type TaskEventHandlerMap = {
+  [K in AthenaEventType['type']]: (event: Extract<AthenaEventType, { type: K }>, snapshot: TaskSnapshot) => void
 }
 
 export const useTaskStore = defineStore('task', () => {
@@ -40,6 +45,14 @@ export const useTaskStore = defineStore('task', () => {
   const error = ref<string | null>(null)
   const lastExport = ref<{ format: string; url: string; filename: string } | null>(null)
   const lastSeq = ref(0)
+  // Set when a `citation_review` event arrives live; AppShell watches it to
+  // prompt the user (manual mode) or toast the result (auto mode).
+  const citationReview = ref<
+    { taskId: string; mode: string; total: number; counts: { pass: number; flag: number; reject: number } } | null
+  >(null)
+  // Set when a `review_required` event arrives live — AppShell prompts the
+  // user to approve the plan before research proceeds.
+  const planReview = ref<{ taskId: string; stage: string; topicCount: number } | null>(null)
   let requestGeneration = 0
 
   const status = computed<TaskStatus>(() => current.value?.status ?? 'created')
@@ -79,45 +92,85 @@ export const useTaskStore = defineStore('task', () => {
     return map[status.value]
   })
 
+  const eventHandlers: TaskEventHandlerMap = {
+    created: () => {},
+    status: (event, snap) => {
+      snap.status = event.payload.status
+    },
+    plan: (event, snap) => {
+      snap.plan = event.payload.plan
+    },
+    plan_expanded: (event, snap) => {
+      if (snap.plan) snap.plan.topics = [...snap.plan.topics, ...event.payload.new_topics]
+    },
+    finding: (event, snap) => {
+      snap.findings = [...snap.findings, event.payload.finding]
+    },
+    quality: (event, snap) => {
+      snap.quality = event.payload.quality
+    },
+    review: (event) => {
+      if (event.payload.review) reviewerNotes.value = [...reviewerNotes.value, event.payload.review]
+    },
+    route: (event) => {
+      supervisorIterations.value = [...supervisorIterations.value, {
+        iteration: event.payload.iteration,
+        route: event.payload.route,
+        quality: event.payload.quality,
+        finding_count: event.payload.finding_count,
+        topic_count: event.payload.topic_count,
+      }]
+    },
+    review_required: (event, snap) => {
+      planReview.value = { taskId: snap.id, stage: event.payload.stage, topicCount: event.payload.topic_count }
+    },
+    review_approved: () => {
+      planReview.value = null
+    },
+    citation_review: (event, snap) => {
+      citationReview.value = {
+        taskId: snap.id,
+        mode: event.payload.mode,
+        total: event.payload.total,
+        counts: { pass: event.payload.pass, flag: event.payload.flag, reject: event.payload.reject },
+      }
+    },
+    done: (event, snap) => {
+      snap.final_report = event.payload.final_report
+      writerStream.value = event.payload.final_report.markdown || ''
+      snap.status = 'done'
+    },
+    usage: (event, snap) => {
+      const cost = event.payload.usage?.cost_usd
+      if (cost) snap.cost_usd = (snap.cost_usd || 0) + cost
+    },
+    cancelled: (_event, snap) => {
+      snap.status = 'cancelled'
+    },
+    error: (event, snap) => {
+      snap.status = 'failed'
+      error.value = event.payload.error || 'unknown error'
+    },
+    warning: () => {},
+  }
+
+  function applyTypedEvent(event: AthenaEventType, snapshot: TaskSnapshot) {
+    const handler = eventHandlers[event.type] as (event: AthenaEventType, snapshot: TaskSnapshot) => void
+    handler(event, snapshot)
+  }
+
   function applyEvent(event: StreamEvent) {
     if (!current.value) return
     if (event.task_id !== current.value.id) return
     if (event.seq > 0 && event.seq <= lastSeq.value) return
     if (event.seq > 0) lastSeq.value = event.seq
     events.value.push(event)
-    const payload = event.payload as Record<string, unknown>
-    if (event.type === 'status') {
-      current.value.status = payload.status as TaskStatus
-    } else if (event.type === 'plan') {
-      current.value.plan = payload.plan as ResearchPlan
-    } else if (event.type === 'plan_expanded') {
-      const newTopics = payload.new_topics as ResearchTopic[]
-      if (current.value.plan) {
-        current.value.plan.topics = [...current.value.plan.topics, ...newTopics]
-      }
-    } else if (event.type === 'finding') {
-      current.value.findings = [...current.value.findings, payload.finding as Finding]
-    } else if (event.type === 'quality') {
-      current.value.quality = payload.quality as QualityScore
-    } else if (event.type === 'review') {
-      const review = String(payload.review || '')
-      if (review) reviewerNotes.value = [...reviewerNotes.value, review]
-    } else if (event.type === 'route') {
-      supervisorIterations.value = [...supervisorIterations.value, payload as RouteEvent]
-    } else if (event.type === 'done') {
-      const report = payload.final_report as FinalReport
-      current.value.final_report = report
-      writerStream.value = report?.markdown || ''
-      current.value.status = 'done'
-    } else if (event.type === 'usage') {
-      const usage = payload.usage as { cost_usd?: number } | undefined
-      if (usage?.cost_usd) current.value.cost_usd = (current.value.cost_usd || 0) + usage.cost_usd
-    } else if (event.type === 'cancelled') {
-      current.value.status = 'cancelled'
-    } else if (event.type === 'error') {
-      current.value.status = 'failed'
-      error.value = String(payload.error || 'unknown error')
-    }
+
+    // Re-validate against the typed protocol before applying event-specific
+    // state changes through the handler map.
+    const parsed = AthenaEvent.safeParse(event)
+    if (!parsed.success) return
+    applyTypedEvent(parsed.data, current.value)
   }
 
   function _reset() {
@@ -128,6 +181,8 @@ export const useTaskStore = defineStore('task', () => {
     lastExport.value = null
     error.value = null
     lastSeq.value = 0
+    citationReview.value = null
+    planReview.value = null
   }
 
   async function start(question: string, userId = 'demo-user') {
@@ -215,6 +270,8 @@ export const useTaskStore = defineStore('task', () => {
     loading,
     error,
     lastExport,
+    citationReview,
+    planReview,
     status,
     plan,
     findings,

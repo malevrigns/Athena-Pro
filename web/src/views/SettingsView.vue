@@ -4,7 +4,7 @@ import { Connection, Refresh, Key, View, Hide, Check } from '@element-plus/icons
 import { ElMessage } from 'element-plus'
 import { useSessionStore } from '@/stores/session'
 import { useTaskStore } from '@/stores/task'
-import { getConfig, getHealth } from '@/api/client'
+import { getConfig, getHealth, settingsApi, type CitationSettings } from '@/api/client'
 import { useEntrance } from '@/composables/useAnime'
 
 useEntrance('.settings-section', { delay: (_el, i) => 100 + i * 90 })
@@ -14,8 +14,58 @@ const task = useTaskStore()
 const showKey = ref(false)
 const testing = ref(false)
 
+// ---- Citation verification (server-global) ----
+const verifierProviders = ['mock', 'openai', 'anthropic', 'deepseek', 'openrouter', 'gemma']
+const citation = ref<CitationSettings>({
+  manual_review: true,
+  verifier: { provider: 'mock', model: '', base_url: '', has_api_key: false },
+})
+const verifierKey = ref('')
+const savingCitation = ref(false)
+const testingVerifier = ref(false)
+
+async function loadCitationSettings() {
+  try {
+    citation.value = await settingsApi.get()
+  } catch { /* not authed yet — keep defaults */ }
+}
+
+async function saveCitationSettings() {
+  savingCitation.value = true
+  try {
+    citation.value = await settingsApi.update({
+      manual_review: citation.value.manual_review,
+      verifier: {
+        provider: citation.value.verifier.provider,
+        model: citation.value.verifier.model,
+        base_url: citation.value.verifier.base_url,
+        api_key: verifierKey.value || undefined,
+      },
+    })
+    verifierKey.value = ''
+    ElMessage.success('引用验证设置已保存')
+  } catch (err) {
+    ElMessage.error(`保存失败:${(err as Error).message}`)
+  } finally {
+    savingCitation.value = false
+  }
+}
+
+async function testVerifier() {
+  testingVerifier.value = true
+  try {
+    const r = await settingsApi.testVerifier()
+    if (r.ok) ElMessage.success(`连接正常 · 模型 ${r.model || '—'} · 回复「${r.sample || ''}」`)
+    else ElMessage.error(`连接失败:${r.detail || '未知错误'}`)
+  } catch (err) {
+    ElMessage.error(`测试失败:${(err as Error).message}`)
+  } finally {
+    testingVerifier.value = false
+  }
+}
+
 onMounted(async () => {
-  await Promise.allSettled([session.refreshConfig(), session.refreshHealth()])
+  await Promise.allSettled([session.refreshConfig(), session.refreshHealth(), loadCitationSettings()])
 })
 
 const formatOptions = [
@@ -153,6 +203,50 @@ async function refreshTasks() {
       <ElText v-else type="info">尚未获取到服务端配置,点击「测试连接」。</ElText>
     </section>
 
+    <!-- Citation verification -->
+    <section class="settings-section">
+      <header>
+        <h3>引用验证</h3>
+        <p>研究完成后如何核对报告引用 · 服务端全局生效,立即对新任务生效</p>
+      </header>
+      <div class="form">
+        <div class="row">
+          <label>人工引用验证</label>
+          <div class="inline">
+            <ElSwitch v-model="citation.manual_review" />
+            <span class="hint">{{ citation.manual_review
+              ? '开启:报告生成后弹窗提示,由人工逐条核对引用'
+              : '关闭:由下方第二个模型自动核对,直接给出 通过 / 存疑 / 驳回' }}</span>
+          </div>
+        </div>
+        <div class="row">
+          <label>验证模型提供方</label>
+          <ElSelect v-model="citation.verifier.provider" style="width: 220px;">
+            <ElOption v-for="p in verifierProviders" :key="p" :label="p" :value="p" />
+          </ElSelect>
+        </div>
+        <div class="row">
+          <label>模型名称</label>
+          <ElInput v-model="citation.verifier.model" placeholder="如 gpt-4o-mini / claude-3-5-haiku" clearable />
+        </div>
+        <div class="row">
+          <label>API Key</label>
+          <ElInput
+            v-model="verifierKey" type="password" show-password clearable
+            :placeholder="citation.verifier.has_api_key ? '已配置 · 留空则保持不变' : '第二个模型的 API Key'"
+          />
+        </div>
+        <div class="row">
+          <label>Base URL</label>
+          <ElInput v-model="citation.verifier.base_url" placeholder="留空用提供方默认;自建 vLLM 填完整地址,如 http://host:port/v1" clearable />
+        </div>
+        <div class="row actions">
+          <ElButton type="primary" :icon="Check" :loading="savingCitation" @click="saveCitationSettings">保存</ElButton>
+          <ElButton :icon="Connection" :loading="testingVerifier" @click="testVerifier">测试第二个模型</ElButton>
+        </div>
+      </div>
+    </section>
+
     <!-- Preferences -->
     <section class="settings-section">
       <header>
@@ -236,6 +330,8 @@ async function refreshTasks() {
 .form { padding: 16px 18px; display: grid; gap: 14px; }
 .row { display: grid; grid-template-columns: 140px 1fr; gap: 14px; align-items: center; }
 .row label { font-size: 12px; color: var(--muted); font-weight: 500; }
+.inline { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.hint { font-size: 12px; color: var(--muted); line-height: 1.5; }
 .row.actions { grid-template-columns: 140px 1fr; }
 .row.actions :nth-child(2) { display: flex; gap: 8px; flex-wrap: wrap; }
 

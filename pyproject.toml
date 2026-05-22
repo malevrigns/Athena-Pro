@@ -17,6 +17,7 @@ dependencies = [
   "jinja2>=3.1",
   "python-multipart>=0.0.9",
   "ddgs>=6.0",
+  "langgraph>=0.2.0",
 ]
 
 [project.optional-dependencies]
@@ -32,7 +33,6 @@ export = [
   "pypandoc>=1.13",
 ]
 langgraph = [
-  "langgraph>=0.2.0",
   "langchain-core>=0.3.0",
   "langchain-openai>=0.2.0",
 ]

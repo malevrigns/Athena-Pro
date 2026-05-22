@@ -1,30 +1,27 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted } from 'vue'
 import {
   Document, CopyDocument, VideoPlay, Refresh, CloseBold, Check,
-  Edit, Close, Flag, EditPen, Link, Filter, ArrowRight, Promotion,
+  Close, Flag, Link, Filter, ArrowRight, Promotion,
 } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useTaskStore } from '@/stores/task'
-import { citationApi, type CitationListItem, type CitationDecision } from '@/api/client'
 import { useEntrance } from '@/composables/useAnime'
+import { useCitations } from '@/composables/useCitations'
 
 useEntrance('.cc-head, .cc-flow', { delay: (_el, i) => 80 + i * 80 })
 useEntrance('.cc-step', { delay: (_el, i) => 280 + i * 70 })
 useEntrance('.cc-list, .cc-detail, .ov-cell', { delay: (_el, i) => 200 + i * 60 })
-import type { Citation } from '@/types/api'
 
 const router = useRouter()
 const task = useTaskStore()
-const active = ref(0)
-const filterStatus = ref('all')
-const pageSize = ref('10')
 
-// Server-side citations + decisions
-const serverCitations = ref<CitationListItem[]>([])
-const serverSummary = ref<Record<string, number>>({})
-const loading = ref(false)
+const {
+  active, filterStatus, serverSummary, loading,
+  loadCitations, citations, filteredCitations, activeCitation,
+  passedCount, totalCount, progressPct, verifyCitation, sourceHost,
+} = useCitations()
 
 async function copyText(value: string | undefined, label: string) {
   if (!value) {
@@ -35,18 +32,6 @@ async function copyText(value: string | undefined, label: string) {
   ElMessage.success(`${label}已复制`)
 }
 
-async function loadCitations() {
-  if (!task.current?.id) return
-  loading.value = true
-  try {
-    const resp = await citationApi.list(task.current.id)
-    serverCitations.value = resp.items
-    serverSummary.value = resp.summary
-  } catch (err) {
-    ElMessage.error(`加载引用失败:${(err as Error).message}`)
-  } finally { loading.value = false }
-}
-
 onMounted(async () => {
   if (!task.tasks.length) await task.refreshTasks()
   if (!task.current?.final_report) {
@@ -55,60 +40,6 @@ onMounted(async () => {
   }
   await loadCitations()
 })
-watch(() => task.current?.id, () => loadCitations())
-
-interface CiteRow {
-  n: number
-  body: string
-  status: 'pass' | 'wait' | 'low'
-  conf: number
-  risk: 'low' | 'mid' | 'high'
-  citation: Citation
-  decision: CitationDecision | null
-}
-
-function sourceHost(c: Citation): string {
-  try { return new URL(c.url).hostname } catch { return '' }
-}
-function classify(c: Citation): { status: 'pass' | 'wait' | 'low'; conf: number; risk: 'low' | 'mid' | 'high' } {
-  const isMock = c.url.startsWith('https://example.com')
-  const trusted = /idc|gartner|mckinsey|forrester|bcg|nature|arxiv|stanford/i.test(c.url + c.title)
-  let conf = trusted ? 0.85 : isMock ? 0.40 : 0.62
-  conf = Math.min(.99, Math.max(.10, conf + (c.number % 3) * 0.02))
-  const status: 'pass' | 'wait' | 'low' = conf >= 0.75 ? 'pass' : conf >= 0.5 ? 'wait' : 'low'
-  const risk: 'low' | 'mid' | 'high' = conf >= 0.75 ? 'low' : conf >= 0.5 ? 'mid' : 'high'
-  return { status, conf, risk }
-}
-
-// Map server citation decisions onto the heuristic-derived rows
-const citations = computed<CiteRow[]>(() => {
-  const decisionMap = new Map<number, CitationDecision>()
-  for (const c of serverCitations.value) {
-    if (c.decision) decisionMap.set(c.number, c.decision)
-  }
-  const list = task.finalReport?.citations ?? []
-  return list.map((c) => {
-    const m = classify(c)
-    const decision = decisionMap.get(c.number) || null
-    let status: 'pass' | 'wait' | 'low' = m.status
-    if (decision) {
-      if (decision.status === 'pass') status = 'pass'
-      else if (decision.status === 'flag') status = 'wait'
-      else if (decision.status === 'reject') status = 'low'
-    }
-    return { n: c.number, body: c.quote || c.title, status, conf: m.conf, risk: m.risk, citation: c, decision }
-  })
-})
-const filteredCitations = computed(() => {
-  if (filterStatus.value === 'all') return citations.value
-  return citations.value.filter((c) => c.status === filterStatus.value)
-})
-const activeCitation = computed<CiteRow | null>(() => filteredCitations.value[active.value] ?? null)
-
-const passedCount = computed(() => citations.value.filter((c) => c.status === 'pass').length)
-const totalCount = computed(() => citations.value.length)
-const progressPct = computed(() => totalCount.value ? Math.round(passedCount.value / totalCount.value * 100) : 0)
-
 const flow = computed(() => {
   const total = totalCount.value
   return [
@@ -168,18 +99,6 @@ function statusInfo(s: string) {
   if (s === 'wait') return { cls: 'tag-orange', label: '待人工复核' }
   if (s === 'low')  return { cls: 'tag-red',    label: '低置信度' }
   return { cls: 'tag', label: '其他' }
-}
-
-// ---- Actions wired to /v1/research/{id}/citations/{n}/verify ----
-async function verifyCitation(n: number, status: 'pass' | 'reject' | 'flag' | 'replaced', label: string) {
-  if (!task.current?.id) return
-  try {
-    await citationApi.verify(task.current.id, n, status)
-    ElMessage.success(`已${label} [${n}]`)
-    await loadCitations()
-  } catch (err) {
-    ElMessage.error((err as Error).message)
-  }
 }
 
 async function refreshAll() {
@@ -375,7 +294,9 @@ function riskInfo(r: string) {
           <header>
             <h4>操作</h4>
             <span v-if="activeCitation.decision" class="cd-decision-meta">
-              当前:<b>{{ activeCitation.decision.status }}</b> · {{ new Date(activeCitation.decision.decided_at).toLocaleString('zh-CN') }}
+              当前:<b>{{ activeCitation.decision.status }}</b>
+              · {{ activeCitation.decision.decided_by === 'model' ? '🤖 模型自动核对' : '👤 人工核对' }}
+              · {{ new Date(activeCitation.decision.decided_at).toLocaleString('zh-CN') }}
             </span>
           </header>
           <div class="cd-buttons">

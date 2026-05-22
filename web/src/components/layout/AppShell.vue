@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import {
   HomeFilled, Monitor, EditPen, Document, Notebook, Folder,
   TrendCharts, Histogram, Setting, Bell, QuestionFilled, Plus,
-  Sunny, Moon, Fold, Expand,
+  Sunny, Moon, Fold, Expand, OfficeBuilding,
 } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useTaskStore } from '@/stores/task'
 import { useSessionStore } from '@/stores/session'
 import { miscApi, notificationApi, type NotificationItem } from '@/api/client'
+import { useRouteMotion } from '@/composables/useAnime'
 
 const route = useRoute()
 const router = useRouter()
@@ -17,6 +18,8 @@ const task = useTaskStore()
 const session = useSessionStore()
 const notifications = ref<NotificationItem[]>([])
 const sideCollapsed = ref(false)
+
+useRouteMotion(() => route.fullPath)
 
 interface NavItem {
   path: string
@@ -34,6 +37,7 @@ const navTop = computed<NavItem[]>(() => {
   const pendingReview = task.tasks.filter((t) => t.status === 'waiting_review').length
   const items: NavItem[] = [
     { path: '/',               label: '首页 / 新任务', icon: HomeFilled },
+    { path: '/projects',       label: '研究项目',      icon: OfficeBuilding },
     { path: '/workbench',      label: '任务工作台',    icon: Monitor,   badgeText: '进行中', badge: String(running || ''), badgeKind: 'text' },
     { path: '/plan-review',    label: '计划审查',      icon: EditPen,   badgeText: '待审查', badge: String(pendingReview || ''), badgeKind: 'text' },
     { path: '/citation-check', label: '引用验证',      icon: Document },
@@ -95,6 +99,38 @@ const pageTitle = computed(() => {
   return sub ? `${t} / ${sub}` : t
 })
 
+// A research plan needs human sign-off before research starts — the run is
+// genuinely blocked until the user decides, so prompt them to go review it.
+watch(() => task.planReview, (pr) => {
+  if (!pr) return
+  task.planReview = null
+  ElMessageBox.confirm(
+    `研究计划已生成(${pr.topicCount} 个研究方向),需要你审批后才会开始检索。现在去审查?`,
+    '研究计划待审批',
+    { confirmButtonText: '去审查', cancelButtonText: '稍后', type: 'warning' },
+  ).then(() => { router.push('/plan-review') }).catch(() => { /* dismissed */ })
+})
+
+// When a task reaches the citation-review step, prompt the user (manual mode)
+// or report the second model's verdicts (auto mode). Watching the store here
+// means the prompt fires no matter which page the user is currently on.
+watch(() => task.citationReview, (cr) => {
+  if (!cr) return
+  task.citationReview = null
+  if (cr.mode === 'manual') {
+    ElMessageBox.confirm(
+      `本次研究生成了 ${cr.total} 条引用,建议人工逐条核对来源。现在前往「引用验证」?`,
+      '引用待验证',
+      { confirmButtonText: '去验证', cancelButtonText: '稍后', type: 'info' },
+    ).then(() => { router.push('/citation-check') }).catch(() => { /* dismissed */ })
+  } else if (cr.mode === 'auto') {
+    ElMessage.success(
+      `第二个模型已自动核对 ${cr.total} 条引用 · 通过 ${cr.counts.pass}`
+      + ` / 存疑 ${cr.counts.flag} / 驳回 ${cr.counts.reject}`,
+    )
+  }
+})
+
 onMounted(async () => {
   await Promise.allSettled([session.refreshConfig(), session.refreshHealth(), task.refreshTasks()])
   try {
@@ -108,7 +144,10 @@ onMounted(async () => {
 <template>
   <div class="app-shell" :class="{ 'side-collapsed': sideCollapsed }">
     <!-- Sidebar -->
-    <aside v-show="!sideCollapsed" class="app-side" :aria-hidden="sideCollapsed" :inert="sideCollapsed">
+    <!-- Kept in the DOM when collapsed so the grid's first track still has an
+         occupant; the .side-collapsed CSS shrinks the track to 0 and fades it
+         out. Removing it (v-show) would drop .main into the 0-width column. -->
+    <aside class="app-side" :aria-hidden="sideCollapsed" :inert="sideCollapsed">
       <div class="brand">
         <div class="brand-logo">A</div>
         <div class="brand-name">Athena</div>

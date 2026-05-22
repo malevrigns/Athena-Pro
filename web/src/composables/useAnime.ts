@@ -1,12 +1,16 @@
-import { onMounted, onUnmounted, nextTick } from 'vue'
+import { onMounted, onUnmounted, nextTick, watch } from 'vue'
 import anime from 'animejs'
+
+function prefersReducedMotion() {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+}
 
 /**
  * Run a staggered entrance animation against any selector once Vue has finished
  * rendering. Skips work when `prefers-reduced-motion` is set.
  */
 export function useEntrance(selector: string, opts: anime.AnimeParams = {}) {
-  const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  const reduced = prefersReducedMotion()
   if (reduced) return
   onMounted(async () => {
     await nextTick()
@@ -31,7 +35,7 @@ export function useEntrance(selector: string, opts: anime.AnimeParams = {}) {
  * Supports `data-precision`, `data-prefix`, `data-suffix` on each element.
  */
 export function runCountUp(selector = '.count-up') {
-  const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  const reduced = prefersReducedMotion()
   document.querySelectorAll<HTMLElement>(selector).forEach((el) => {
     const target = Number(el.dataset.value ?? '0')
     const precision = Number(el.dataset.precision ?? '0')
@@ -122,6 +126,118 @@ export function floatInGroup(els: HTMLElement[] | NodeListOf<HTMLElement>, opts:
     easing: 'easeOutQuart',
     ...opts,
   })
+}
+
+/**
+ * Route-level anime.js motion system.
+ *
+ * This keeps every page interactive without copying animation code into every
+ * view: page roots get a small entrance, and common clickable/scannable
+ * controls get hover + press feedback. Page-specific animations can still use
+ * `useEntrance` for denser sequences.
+ */
+export function useRouteMotion(routeKey: () => unknown, rootSelector = '.main-body') {
+  if (prefersReducedMotion()) return
+
+  const cleanups: Array<() => void> = []
+  let runId = 0
+
+  function clearBindings() {
+    while (cleanups.length) cleanups.pop()?.()
+  }
+
+  function isDisabled(el: HTMLElement) {
+    return el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true'
+  }
+
+  function bindInteractive(el: HTMLElement) {
+    const onEnter = () => {
+      if (isDisabled(el)) return
+      anime.remove(el)
+      anime({
+        targets: el,
+        translateY: -2,
+        scale: 1.01,
+        duration: 180,
+        easing: 'easeOutQuad',
+      })
+    }
+    const onLeave = () => {
+      anime.remove(el)
+      anime({
+        targets: el,
+        translateY: 0,
+        scale: 1,
+        duration: 220,
+        easing: 'easeOutQuad',
+      })
+    }
+    const onDown = () => {
+      if (isDisabled(el)) return
+      anime.remove(el)
+      anime({ targets: el, scale: 0.985, duration: 90, easing: 'easeOutQuad' })
+    }
+    const onUp = () => {
+      if (isDisabled(el)) return
+      anime.remove(el)
+      anime({ targets: el, scale: 1.01, duration: 140, easing: 'easeOutBack' })
+    }
+
+    el.addEventListener('mouseenter', onEnter)
+    el.addEventListener('mouseleave', onLeave)
+    el.addEventListener('mousedown', onDown)
+    el.addEventListener('mouseup', onUp)
+    cleanups.push(() => {
+      anime.remove(el)
+      el.removeEventListener('mouseenter', onEnter)
+      el.removeEventListener('mouseleave', onLeave)
+      el.removeEventListener('mousedown', onDown)
+      el.removeEventListener('mouseup', onUp)
+    })
+  }
+
+  async function applyMotion() {
+    const currentRun = ++runId
+    clearBindings()
+    await nextTick()
+    if (currentRun !== runId) return
+
+    const root = document.querySelector<HTMLElement>(rootSelector)
+    if (!root) return
+
+    const pageRoot = root.firstElementChild as HTMLElement | null
+    if (pageRoot) {
+      anime.remove(pageRoot)
+      anime({
+        targets: pageRoot,
+        opacity: [0, 1],
+        translateY: [10, 0],
+        duration: 360,
+        easing: 'easeOutCubic',
+      })
+    }
+
+    const pageInteractive = root.querySelectorAll<HTMLElement>([
+      'button',
+      'a',
+      '.row-button',
+      '.td-row',
+      '.stage-item',
+      '.trace-main',
+      '.summary-item',
+      '.hist-stat',
+      '.kpi-card',
+      '.cost-kpi-grid .card',
+      '.coll-card',
+      '.src-card',
+    ].join(', '))
+    const shellInteractive = document.querySelectorAll<HTMLElement>('.app-side .nav-item, .topbar button')
+    ;[...pageInteractive, ...shellInteractive].forEach(bindInteractive)
+  }
+
+  onMounted(applyMotion)
+  watch(routeKey, applyMotion, { flush: 'post' })
+  onUnmounted(clearBindings)
 }
 
 export { anime }

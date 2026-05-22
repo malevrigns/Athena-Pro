@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import AsyncIterator
 
-from athena.agents.human_review import plan_review_node
+from athena.agents.citation_review import citation_review_node
+from athena.agents.human_review import plan_review_apply_node, plan_review_request_node
 from athena.agents.planner import planner_node
 from athena.agents.quality import quality_gate_node
 from athena.agents.researcher import researcher_node
@@ -11,6 +12,7 @@ from athena.agents.supervisor import supervisor_node
 from athena.agents.writer import writer_node
 from athena.config import get_settings
 from athena.events import bus
+from athena.graph.langgraph_adapter import ResearchGraphState, graph_state, runtime_node
 from athena.schemas import StreamEvent, TaskStatus
 from athena.state import ResearchState
 
@@ -18,48 +20,88 @@ from athena.state import ResearchState
 async def run_research_graph(state: ResearchState) -> AsyncIterator[StreamEvent]:
     """Top-level entry point used by the runtime.
 
-    Tries the LangGraph backend when explicitly enabled; otherwise runs the iterative supervisor
-    loop implemented below. Both paths publish StreamEvents on the bus and yield them so the SSE
-    handler can forward each one to the browser.
+    LangGraph is the production orchestration backend. The hand-written runner
+    below remains as a legacy/test fallback and is used only when
+    ATHENA_USE_LANGGRAPH=false.
     """
     settings = get_settings()
     if settings.use_langgraph:
-        async for event in _run_langgraph_if_available(state):
+        async for event in _run_langgraph(state):
             yield event
         return
     async for event in run_research_graph_without_langgraph(state):
         yield event
 
 
-async def _run_langgraph_if_available(state: ResearchState) -> AsyncIterator[StreamEvent]:
+async def _run_langgraph(state: ResearchState) -> AsyncIterator[StreamEvent]:
     try:
         from langgraph.graph import END, START, StateGraph  # type: ignore
-    except Exception:
-        state.add_event("warning", node="graph", message="LangGraph not installed; fallback runtime used")
-        async for event in run_research_graph_without_langgraph(state):
+    except Exception as exc:  # pragma: no cover - only hit in a misconfigured environment
+        raise RuntimeError("LangGraph is required for production agent orchestration") from exc
+
+    settings = get_settings()
+    cursor = len(state.events)
+
+    async def _flush() -> AsyncIterator[StreamEvent]:
+        nonlocal cursor
+        while cursor < len(state.events):
+            event = state.events[cursor]
+            cursor += 1
+            await bus.publish(event)
             yield event
-        return
-    builder = StateGraph(ResearchState)
-    builder.add_node("planner", planner_node)
-    builder.add_node("plan_review", plan_review_node)
-    builder.add_node("supervisor", supervisor_node)
-    builder.add_node("researcher", researcher_node)
-    builder.add_node("quality_gate", quality_gate_node)
-    builder.add_node("reviewer", reviewer_node)
-    builder.add_node("writer", writer_node)
+
+    async def iteration_start_node(state: ResearchState) -> ResearchState:
+        current = int(state.metadata.get("research_iteration", 0) or 0)
+        state.metadata["research_iteration"] = current + 1
+        return state
+
+    def after_quality(state: ResearchGraphState) -> str:
+        runtime = state["runtime"]
+        if runtime.status == TaskStatus.CANCELLED:
+            return "cancelled"
+        max_iters = max(1, settings.max_research_iterations)
+        threshold = max(0.0, min(1.0, settings.quality_threshold))
+        iteration = int(runtime.metadata.get("research_iteration", 1) or 1)
+        if runtime.quality and runtime.quality.overall >= threshold:
+            return "writer"
+        if iteration >= max_iters:
+            return "writer"
+        return "reviewer"
+
+    builder = StateGraph(ResearchGraphState)
+    builder.add_node("planner", runtime_node(planner_node))
+    builder.add_node("plan_review_request", runtime_node(plan_review_request_node))
+    builder.add_node("plan_review_apply", runtime_node(plan_review_apply_node))
+    builder.add_node("iteration_start", runtime_node(iteration_start_node))
+    builder.add_node("supervisor", runtime_node(supervisor_node))
+    builder.add_node("researcher", runtime_node(researcher_node))
+    builder.add_node("quality_gate", runtime_node(quality_gate_node))
+    builder.add_node("reviewer", runtime_node(reviewer_node))
+    builder.add_node("writer", runtime_node(writer_node))
+    builder.add_node("citation_review", runtime_node(citation_review_node))
     builder.add_edge(START, "planner")
-    builder.add_edge("planner", "plan_review")
-    builder.add_edge("plan_review", "supervisor")
+    builder.add_edge("planner", "plan_review_request")
+    builder.add_edge("plan_review_request", "plan_review_apply")
+    builder.add_edge("plan_review_apply", "iteration_start")
+    builder.add_edge("iteration_start", "supervisor")
     builder.add_edge("supervisor", "researcher")
     builder.add_edge("researcher", "quality_gate")
-    builder.add_edge("quality_gate", "writer")
-    builder.add_edge("writer", END)
+    builder.add_conditional_edges(
+        "quality_gate",
+        after_quality,
+        {
+            "writer": "writer",
+            "reviewer": "reviewer",
+            "cancelled": END,
+        },
+    )
+    builder.add_edge("reviewer", "iteration_start")
+    builder.add_edge("writer", "citation_review")
+    builder.add_edge("citation_review", END)
     graph = builder.compile()
-    result = await graph.ainvoke(state)
-    result_state: ResearchState = result if isinstance(result, ResearchState) else state
-    for event in result_state.events:
-        await bus.publish(event)
-        yield event
+    async for _ in graph.astream(graph_state(state), stream_mode="values"):
+        async for event in _flush():
+            yield event
 
 
 async def run_research_graph_without_langgraph(state: ResearchState) -> AsyncIterator[StreamEvent]:
@@ -70,7 +112,9 @@ async def run_research_graph_without_langgraph(state: ResearchState) -> AsyncIte
     so failing reports auto-trigger follow-up research instead of shipping a half-baked draft.
     """
     settings = get_settings()
-    cursor = 0
+    # Start past any pre-existing events so a resumed run only publishes the
+    # new events it produces (and a fresh run never double-publishes `created`).
+    cursor = len(state.events)
 
     async def _flush() -> AsyncIterator[StreamEvent]:
         nonlocal cursor
@@ -90,8 +134,14 @@ async def run_research_graph_without_langgraph(state: ResearchState) -> AsyncIte
         yield ev
     if state.status == TaskStatus.CANCELLED:
         return
-    # 2. plan review
-    async for ev in _run(plan_review_node):
+    # 2. plan review — emit the request (flushed to the client first), then
+    #    block on plan_review_apply_node until the human approves, so research
+    #    genuinely waits for sign-off instead of auto-running.
+    async for ev in _run(plan_review_request_node):
+        yield ev
+    if state.status == TaskStatus.CANCELLED:
+        return
+    async for ev in _run(plan_review_apply_node):
         yield ev
     if state.status == TaskStatus.CANCELLED:
         return
@@ -116,4 +166,7 @@ async def run_research_graph_without_langgraph(state: ResearchState) -> AsyncIte
             yield ev
     # 4. writer
     async for ev in _run(writer_node):
+        yield ev
+    # 5. citation review — verifies report citations and emits the terminal `done`
+    async for ev in _run(citation_review_node):
         yield ev

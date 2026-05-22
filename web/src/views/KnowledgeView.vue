@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { knowledgeApi, type KnowledgeCollection, type KnowledgeItem, type KnowledgeOverview } from '@/api/client'
+import { knowledgeApi } from '@/api/client'
 import { useSessionStore } from '@/stores/session'
 import { useEntrance } from '@/composables/useAnime'
+import { useKnowledgeItems } from '@/composables/useKnowledgeItems'
 
 useEntrance('.coll-card')
 useEntrance('.ii-row, .grid-item', { delay: (_el, i) => 80 + i * 40 })
@@ -16,84 +17,17 @@ import {
 
 const session = useSessionStore()
 
-// Filter state
-const search = ref('')
-const status = ref('all')
-const tagFilter = ref('all')
-const collectionFilter = ref('')
+// View-only UI state; the data layer lives in the composable below.
 const viewMode = ref<'list' | 'grid'>('list')
-const pageSize = ref('10')
-const page = ref(1)
 
-// API data
-const apiCollections = ref<KnowledgeCollection[]>([])
-const apiItems = ref<KnowledgeItem[]>([])
-const apiTotal = ref(0)
-const apiOverview = ref<KnowledgeOverview | null>(null)
-const apiTags = ref<{ label: string; count: number }[]>([])
-const loading = ref(false)
+const {
+  search, status, tagFilter, collectionFilter, pageSize, page,
+  apiCollections, apiItems, apiTotal, apiOverview, apiTags, loading,
+  loadCollections, loadOverview, loadTags, loadItems, loadAll,
+  effectiveCollections, effectiveItems, effectiveOverview, totalPages, clearFilters,
+} = useKnowledgeItems()
 
-async function loadCollections() { apiCollections.value = (await knowledgeApi.collections()).items }
-async function loadOverview() { apiOverview.value = await knowledgeApi.overview() }
-async function loadTags() { apiTags.value = (await knowledgeApi.tags(10)).items }
-
-async function loadItems() {
-  loading.value = true
-  try {
-    const limit = Number(pageSize.value)
-    const resp = await knowledgeApi.items({
-      collection_id: collectionFilter.value || undefined,
-      search: (search.value || tagFilter.value !== 'all' ? (search.value || tagFilter.value) : undefined),
-      status: status.value !== 'all' ? status.value : undefined,
-      limit,
-      offset: (page.value - 1) * limit,
-    })
-    apiItems.value = resp.items
-    apiTotal.value = resp.total
-  } finally { loading.value = false }
-}
-
-const effectiveCollections = computed(() => apiCollections.value.map((c) => ({
-  id: c.id, name: c.name, icon: null, color: c.color || 'blue',
-  count: '—', updated: c.updated_at ? new Date(c.updated_at).toLocaleString('zh-CN') : '—',
-  desc: c.description || '',
-})))
-
-const effectiveItems = computed(() => apiItems.value.map((it) => ({
-  id: it.id, name: it.name, sub: it.summary || '',
-  type: it.type || '—', source: it.source || '—',
-  tags: it.tags, time: it.updated_at ? new Date(it.updated_at).toLocaleString('zh-CN') : '—',
-  usage: it.usage_count, status: it.status,
-})))
-
-const effectiveOverview = computed(() => apiOverview.value ? [
-  { icon: '🗄', color: 'blue',   value: String(apiOverview.value.total_items),    label: '知识总量' },
-  { icon: '✓',  color: 'green',  value: String(apiOverview.value.verified_items), label: '已验证条目' },
-  { icon: '#',  color: 'purple', value: String(apiOverview.value.active_tags),    label: '活跃标签' },
-  { icon: '%',  color: 'orange', value: apiOverview.value.verified_pct.toFixed(1) + '%', label: '验证率' },
-] : [])
-
-const totalPages = computed(() => Math.max(1, Math.ceil(apiTotal.value / Math.max(1, Number(pageSize.value)))))
-
-onMounted(async () => {
-  await loadCollections()
-  await loadOverview()
-  await loadTags()
-  await loadItems()
-})
-watch([search, status, pageSize, collectionFilter, tagFilter], () => { page.value = 1; loadItems() })
-watch(page, () => loadItems())
-
-// ---------- Filter actions ----------
-function clearFilters() {
-  const alreadyClear = !search.value && status.value === 'all' && tagFilter.value === 'all' && !collectionFilter.value
-  search.value = ''
-  status.value = 'all'
-  tagFilter.value = 'all'
-  collectionFilter.value = ''
-  page.value = 1
-  ElMessage.info(alreadyClear ? '当前没有筛选条件' : '已清除筛选')
-}
+onMounted(() => loadAll())
 
 function setViewMode(mode: 'list' | 'grid') {
   if (viewMode.value === mode) {
@@ -595,7 +529,7 @@ const recentUpdates = [
 .td-ico-btn:disabled { opacity: .4; cursor: not-allowed; }
 
 
-.kb-search-row { display: flex; gap: 10px; align-items: center; }
+.kb-search-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .kb-search { flex: 1; }
 .kb-search :deep(.el-input__wrapper) { height: 44px; padding: 0 14px; border-radius: 10px; }
 .btn-secondary {
@@ -680,7 +614,7 @@ const recentUpdates = [
 .items-table {}
 .ih-row, .ii-row {
   display: grid;
-  grid-template-columns: 2fr .8fr .8fr 1.2fr 1.2fr .6fr .8fr 50px;
+  grid-template-columns: minmax(0, 2fr) minmax(0, .8fr) minmax(0, .8fr) minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, .6fr) minmax(0, .8fr) 50px;
   align-items: center;
   gap: 10px;
   padding: 12px 22px;
@@ -700,6 +634,7 @@ const recentUpdates = [
 .ii-row:hover { background: var(--surface-2); }
 .ii-row:last-child { border-bottom: none; }
 .ii-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ii-name > div:last-child { min-width: 0; }
 .ii-ico {
   width: 30px; height: 30px;
   border-radius: 6px;
@@ -712,8 +647,8 @@ const recentUpdates = [
 .ii-ico[data-color='orange'] { background: #ffedd5; }
 .ii-ico[data-color='pink']   { background: #fce7f3; }
 .ii-ico[data-color='cyan']   { background: #cffafe; }
-.ii-title { font-size: 13.5px; font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; }
-.ii-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; }
+.ii-title { font-size: 13.5px; font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.ii-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .ii-type, .ii-source { color: var(--muted); font-size: 12.5px; }
 .ii-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .ii-tags .tag-more { background: var(--surface-3); color: var(--muted); }
@@ -792,11 +727,20 @@ const recentUpdates = [
 .tag-chip:hover { background: var(--primary); color: white; }
 .tag-chip:hover small { color: rgba(255,255,255,.7); }
 
-.recent-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
-.recent-list li { padding-bottom: 14px; border-bottom: 1px dashed var(--border); }
+.recent-list { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.recent-list li { min-width: 0; padding-bottom: 14px; border-bottom: 1px dashed var(--border); }
 .recent-list li:last-child { border-bottom: none; padding-bottom: 0; }
-.ru-title { font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.4; }
-.ru-desc { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.ru-title {
+  font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.4;
+  overflow-wrap: anywhere; word-break: break-word;
+}
+.ru-desc {
+  font-size: 12px; color: var(--muted); margin-top: 4px;
+  /* Item summaries can be raw file bytes (e.g. an uploaded .docx); hard-break
+     and clamp so they never blow out the sidebar width. */
+  overflow-wrap: anywhere; word-break: break-word;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
 .ru-time { font-size: 11px; color: var(--muted-soft); margin-top: 4px; }
 
 @media (max-width: 1400px) {

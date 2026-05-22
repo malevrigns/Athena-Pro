@@ -25,11 +25,12 @@ from athena.api.schemas import (
 )
 from athena.config import get_settings
 from athena.export import ExportError, available_formats, get_exporter
+from athena.hitl import submit_decision
 from athena.memory import Feedback, MemoryStore
 from athena.observability import configure_logging, logger
 from athena.persistence import get_store
 from athena.runtime import runtime_store
-from athena.schemas import TaskStatus
+from athena.schemas import ReviewDecision, TaskStatus
 
 API_VERSION = "5.0.0"
 
@@ -116,12 +117,16 @@ def create_app() -> FastAPI:
     from athena.api.knowledge import router as kn_router
     from athena.api.misc import router as misc_router
     from athena.api.notifications import router as notification_router
+    from athena.api.projects import router as projects_router
+    from athena.api.settings import router as settings_router
     app.include_router(agents_router, dependencies=[Depends(_verify_auth)])
     app.include_router(audit_router, dependencies=[Depends(_verify_auth)])
     app.include_router(cost_router, dependencies=[Depends(_verify_auth)])
     app.include_router(cite_router, dependencies=[Depends(_verify_auth)])
     app.include_router(kn_router, dependencies=[Depends(_verify_auth)])
     app.include_router(notification_router, dependencies=[Depends(_verify_auth)])
+    app.include_router(projects_router, dependencies=[Depends(_verify_auth)])
+    app.include_router(settings_router, dependencies=[Depends(_verify_auth)])
     app.include_router(misc_router)  # announcements open by design
 
     auth_dep = Depends(_verify_auth)
@@ -189,20 +194,27 @@ def create_app() -> FastAPI:
 
     @app.post("/v1/research/{task_id}/resume", dependencies=[auth_dep])
     async def resume(task_id: str):
-        """MVP placeholder — once Postgres checkpointing lands the runtime can
-        resume from the last persisted graph state. For now we return 409."""
-        raise HTTPException(409, "resume is not yet supported (planned for v6 with PostgresSaver)")
+        """Re-run an interrupted task from its persisted state. The graph's
+        idempotent nodes skip work already completed, so the run continues
+        from wherever it stopped."""
+        state = await runtime_store.resume(task_id)
+        if state is None:
+            raise HTTPException(404, "task not found")
+        if state.status == TaskStatus.DONE:
+            raise HTTPException(409, "task already complete")
+        return {"task_id": task_id, "status": state.status.value, "resumed": True}
 
     @app.post("/v1/research/{task_id}/review", dependencies=[auth_dep])
     async def submit_review(task_id: str, body: ReviewRequest):
         state = await runtime_store.get(task_id)
         if not state:
             raise HTTPException(404, "task not found")
-        # Persist decision into metadata; runtime auto-approves in current MVP.
-        state.metadata["review_decision"] = body.model_dump(mode="json")
-        state.add_event("review_decision", node="api", decision=body.model_dump(mode="json"))
-        await get_store().upsert_task(state)
-        return {"task_id": task_id, "approved": body.approved}
+        # Deliver the decision to the waiting plan-review gate — this is what
+        # actually unblocks (or cancels) the research run.
+        decision = ReviewDecision.model_validate(body.model_dump(exclude={"task_id"}))
+        if not submit_decision(task_id, decision):
+            raise HTTPException(409, "task is not awaiting plan review")
+        return {"task_id": task_id, "approved": body.approved, "resumed": True}
 
     @app.get("/v1/research/{task_id}/events", dependencies=[auth_dep])
     async def recent_events(task_id: str):

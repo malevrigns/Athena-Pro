@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import os
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Protocol
 
 from athena.config import get_settings
 from athena.observability import logger
@@ -201,6 +201,13 @@ class AnthropicLLM:
 
 
 def _system_prompt(node: str) -> str:
+    try:
+        from athena.research.prompt_assets import load_research_node_prompt
+
+        return load_research_node_prompt(node).text
+    except Exception as exc:
+        logger.debug("llm.prompt_asset_fallback node=%s err=%s", node, exc)
+
     base = (
         "你是 Athena Pro 的多 Agent 深度研究助手的一部分。"
         "严格使用中文输出,语气专业、克制、可被引用。"
@@ -211,6 +218,7 @@ def _system_prompt(node: str) -> str:
         "reviewer": "你的角色是 Reviewer: 审阅 findings 的覆盖度、矛盾点和数据新鲜度,给出 1-3 条具体改进建议。",
         "writer": "你的角色是 Writer: 输出 Markdown 报告,使用清晰的小节、有序的关键结论、以及 [n] 形式的引用编号。",
         "quality_gate": "你的角色是 Quality Gate: 给 findings 打分,分别评估事实性、覆盖度、引用完整性。",
+        "citation_review": "你的角色是 Citation Reviewer: 核对单条引用来源的可靠性、相关性与时效性,严格按要求只输出 JSON。",
     }.get(node, "")
     return f"{base}\n{role}"
 
@@ -339,6 +347,48 @@ def _build_for_model(model: str) -> LLMClient:
     if not api_key:
         return MockLLM()
     return OpenAICompatibleLLM(model, api_key, base_url, settings.llm_timeout_sec, settings.llm_temperature)
+
+
+def build_verifier_llm(
+    provider: str,
+    model: str,
+    api_key: str = "",
+    base_url: str = "",
+    *,
+    timeout: int = 60,
+    temperature: float = 0.0,
+) -> LLMClient:
+    """Build a standalone LLM client for citation verification.
+
+    Independent of the global research-model settings: the citation reviewer
+    can point at an entirely separate provider / key / endpoint.
+    """
+    provider = (provider or "mock").strip().lower()
+    model = (model or "").strip()
+    api_key = (api_key or "").strip()
+    base_url = (base_url or "").strip()
+    if provider == "mock" or not model:
+        return MockLLM()
+    if provider == "anthropic":
+        if not api_key:
+            logger.warning("verifier.no_anthropic_key — falling back to mock")
+            return MockLLM()
+        return AnthropicLLM(model, api_key, timeout, temperature)
+    # Everything else is treated as OpenAI-compatible.
+    if not base_url:
+        base_url = {
+            "deepseek": "https://api.deepseek.com",
+            "openrouter": "https://openrouter.ai/api/v1",
+            "gemma": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        }.get(provider, "")
+    if base_url:
+        # Raw httpx caller — full header control, works with self-hosted vLLM
+        # (literal `EMPTY` key) as well as hosted OpenAI-compatible APIs.
+        return RawHttpLLM(model, base_url, api_key or None, timeout, temperature)
+    if not api_key:
+        logger.warning("verifier.no_api_key provider=%s — falling back to mock", provider)
+        return MockLLM()
+    return OpenAICompatibleLLM(model, api_key, None, timeout, temperature)
 
 
 def reset_llm_cache() -> None:

@@ -86,6 +86,9 @@ def _parse_llm_topics(text: str) -> list[ResearchTopic] | None:
 
 @guard_budget("planner")
 async def planner_node(state: ResearchState) -> ResearchState:
+    # Idempotent: a resumed run keeps the plan it already produced.
+    if state.plan and state.plan.topics:
+        return state
     state.set_status(TaskStatus.PLANNING, node="planner")
     llm = get_llm("planner")
     prompt = PLANNER_PROMPT.render(question=state.question)

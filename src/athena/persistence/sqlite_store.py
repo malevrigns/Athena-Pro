@@ -9,6 +9,7 @@ from typing import Any
 import aiosqlite
 
 from athena.config import get_settings
+from athena.research.persistence import RESEARCH_OS_SCHEMA, ResearchSQLiteRepository
 from athena.schemas import StreamEvent, TaskStatus
 from athena.state import ResearchState
 
@@ -44,6 +45,12 @@ CREATE TABLE IF NOT EXISTS citation_verifications (
     decided_by  TEXT,
     decided_at  TEXT NOT NULL,
     UNIQUE(task_id, citation_n)
+);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    key        TEXT PRIMARY KEY,
+    value_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS knowledge_collections (
@@ -132,6 +139,7 @@ class SQLiteStore:
         self._connect_lock = asyncio.Lock()
         self._lock = asyncio.Lock()
         self._conn: aiosqlite.Connection | None = None
+        self._research_repo: ResearchSQLiteRepository | None = None
 
     async def connect(self) -> None:
         if self._conn is not None:
@@ -144,6 +152,7 @@ class SQLiteStore:
             await conn.execute("PRAGMA journal_mode=WAL;")
             await conn.execute("PRAGMA synchronous=NORMAL;")
             await conn.executescript(_SCHEMA)
+            await conn.executescript(RESEARCH_OS_SCHEMA)
             await conn.commit()
             self._conn = conn
 
@@ -151,6 +160,20 @@ class SQLiteStore:
         if self._conn is not None:
             await self._conn.close()
             self._conn = None
+        self._research_repo = None
+
+    async def research_repository(self) -> ResearchSQLiteRepository:
+        """Return the Research OS repository bound to this store's connection.
+
+        Phase 1 step 2 entry point — the repository shares the store's
+        connection and lock so Research OS writes stay serialised with
+        legacy task/event writes.
+        """
+        await self.connect()
+        assert self._conn is not None
+        if self._research_repo is None:
+            self._research_repo = ResearchSQLiteRepository(self._conn, self._lock)
+        return self._research_repo
 
     async def upsert_task(self, state: ResearchState) -> None:
         await self.connect()
@@ -301,6 +324,34 @@ class SQLiteStore:
             {"citation_n": r[0], "status": r[1], "comment": r[2], "decided_by": r[3], "decided_at": r[4]}
             for r in rows
         ]
+
+    # ----------- App settings (server-global key/value) -----------
+    async def get_app_setting(self, key: str) -> str | None:
+        await self.connect()
+        assert self._conn is not None
+        async with self._lock:
+            cursor = await self._conn.execute(
+                "SELECT value_json FROM app_settings WHERE key = ?", (key,),
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+        return row[0] if row else None
+
+    async def set_app_setting(self, key: str, value_json: str) -> None:
+        await self.connect()
+        assert self._conn is not None
+        async with self._lock:
+            await self._conn.execute(
+                """
+                INSERT INTO app_settings(key, value_json, updated_at)
+                VALUES(?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value_json = excluded.value_json,
+                    updated_at = excluded.updated_at
+                """,
+                (key, value_json, _iso_now()),
+            )
+            await self._conn.commit()
 
     # ----------- Knowledge -----------
     async def list_knowledge_collections(self) -> list[dict[str, Any]]:

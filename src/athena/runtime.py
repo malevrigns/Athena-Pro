@@ -9,9 +9,10 @@ from uuid import uuid4
 from athena.config import get_settings
 from athena.events import bus
 from athena.graph.main_graph import run_research_graph
+from athena.hitl import close_gate, open_gate, submit_decision
 from athena.observability import logger
 from athena.persistence import get_store
-from athena.schemas import StreamEvent, TaskSnapshot, TaskStatus
+from athena.schemas import ReviewDecision, StreamEvent, TaskSnapshot, TaskStatus
 from athena.state import ResearchState
 
 
@@ -43,11 +44,14 @@ class RuntimeStore:
         state.add_event("created", node="api", question=question)
         return state
 
-    async def run_background(self, state: ResearchState) -> None:
+    async def run_background(self, state: ResearchState, replay_existing: bool = True) -> None:
         store = get_store()
         try:
-            for event in state.events:
-                await bus.publish(event)
+            # A fresh run replays its `created` event; a resumed run already
+            # has its history persisted, so it only publishes new events.
+            if replay_existing:
+                for event in state.events:
+                    await bus.publish(event)
             await store.upsert_task(state)
             timeout = get_settings().hard_timeout_sec
             async def _run() -> None:
@@ -67,13 +71,42 @@ class RuntimeStore:
             logger.exception("runtime.task_failed", extra={"task_id": state.task_id})
             await bus.publish(state.add_event("error", node="runtime", error=str(exc)))
         finally:
+            close_gate(state.task_id)
             await store.upsert_task(state)
 
     async def start(self, question: str, user_id: str = "demo-user") -> ResearchState:
         await self.ensure_started()
         state = self.create_state(question, user_id=user_id)
+        # Open a plan-review gate before the graph starts so plan_review really
+        # blocks until the /review endpoint delivers a decision.
+        open_gate(state.task_id)
         task = asyncio.create_task(self.run_background(state), name=f"athena:{state.task_id}")
         self.tasks[state.task_id] = task
+        return state
+
+    async def resume(self, task_id: str) -> ResearchState | None:
+        """Re-run an interrupted task from its persisted state.
+
+        The graph nodes are idempotent — planner / plan_review / writer /
+        citation review skip completed work and researcher skips done topics —
+        so simply re-running the graph continues from wherever it stopped.
+        """
+        await self.ensure_started()
+        state = await self.get(task_id)
+        if state is None:
+            return None
+        if state.status == TaskStatus.DONE:
+            return state
+        running = self.tasks.get(task_id)
+        if running is not None and not running.done():
+            return state  # already in flight — nothing to do
+        self.abort_flags[task_id] = asyncio.Event()
+        open_gate(task_id)
+        task = asyncio.create_task(
+            self.run_background(state, replay_existing=False),
+            name=f"athena:resume:{task_id}",
+        )
+        self.tasks[task_id] = task
         return state
 
     def interrupt(self, task_id: str) -> bool:
@@ -81,6 +114,9 @@ class RuntimeStore:
         if not flag:
             return False
         flag.set()
+        # If the task is parked at plan review, release the gate with a
+        # rejection so it cancels instead of hanging until the review timeout.
+        submit_decision(task_id, ReviewDecision(approved=False, comments="用户中断研究"))
         return True
 
     async def get(self, task_id: str) -> ResearchState | None:

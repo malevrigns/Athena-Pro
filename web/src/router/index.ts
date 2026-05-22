@@ -3,6 +3,10 @@ import { useSessionStore } from '@/stores/session'
 
 const routes: RouteRecordRaw[] = [
   { path: '/',               name: 'home',       component: () => import('@/views/HomeView.vue'),         meta: { title: '首页', subtitle: '新任务' } },
+  { path: '/projects',       name: 'projects',   component: () => import('@/views/projects/ProjectListView.vue'), meta: { title: '研究项目' } },
+  { path: '/projects/:id',   name: 'project-overview', component: () => import('@/views/projects/ProjectOverviewView.vue'), props: true, meta: { title: '研究项目' } },
+  { path: '/projects/:id/literature', name: 'project-literature', component: () => import('@/views/projects/ProjectLiteratureView.vue'), props: true, meta: { title: '研究项目', subtitle: '文献' } },
+  { path: '/projects/:id/trace', name: 'project-trace', component: () => import('@/views/projects/ProjectTraceView.vue'), props: true, meta: { title: '研究项目', subtitle: 'Trace' } },
   { path: '/workbench',      name: 'workbench',  component: () => import('@/views/WorkbenchView.vue'),    meta: { title: '任务工作台' } },
   { path: '/workbench/:id',  name: 'workbench-detail', component: () => import('@/views/WorkbenchView.vue'), props: true, meta: { title: '任务工作台' } },
   { path: '/plan-review',    name: 'plan-review', component: () => import('@/views/PlanReviewView.vue'),  meta: { title: '计划审查' } },

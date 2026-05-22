@@ -61,11 +61,14 @@ class Settings(BaseSettings):
     search_cache_ttl_sec: int = 1800
 
     # Graph control
-    use_langgraph: bool = False
+    use_langgraph: bool = True
     max_research_iterations: int = 2
     quality_threshold: float = 0.7
     max_parallel_researchers: int = 4
     hard_timeout_sec: int = 600
+    # How long plan review may block waiting for a human decision before the
+    # plan is auto-approved (kept separate from the compute hard timeout).
+    review_timeout_sec: int = 1800
     max_budget_usd: float = 5.0
 
     # API

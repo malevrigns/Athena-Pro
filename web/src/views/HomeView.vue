@@ -21,7 +21,6 @@ const kpiRefs = ref<HTMLElement[]>([])
 const featureRefs = ref<HTMLElement[]>([])
 const suggestionRefs = ref<HTMLElement[]>([])
 const recentRefs = ref<HTMLElement[]>([])
-const blobRefs = ref<HTMLElement[]>([])
 const sparkContainer = ref<HTMLElement | null>(null)
 const inputFocused = ref(false)
 
@@ -155,20 +154,43 @@ function animateCountUp() {
 }
 
 function animateBlobs() {
-  blobRefs.value.forEach((el, i) => {
+  // Each blob wanders a long, slow, organic loop — different random path and
+  // duration per blob so the gradient backdrop never looks static or synced.
+  document.querySelectorAll<HTMLElement>('.hero .blob').forEach((el, i) => {
     anime({
       targets: el,
-      translateX: () => anime.random(-40, 40),
-      translateY: () => anime.random(-30, 30),
-      scale: [
-        { value: 1 + anime.random(-15, 15) / 100, duration: 6000, easing: 'easeInOutSine' },
+      translateX: [
+        { value: anime.random(-70, 70) },
+        { value: anime.random(-70, 70) },
+        { value: anime.random(-70, 70) },
       ],
-      duration: 6000 + i * 400,
+      translateY: [
+        { value: anime.random(-55, 55) },
+        { value: anime.random(-55, 55) },
+        { value: anime.random(-55, 55) },
+      ],
+      scale: [
+        { value: 1.18 },
+        { value: 0.86 },
+        { value: 1.08 },
+      ],
+      duration: 16000 + i * 4000,
+      easing: 'easeInOutSine',
       direction: 'alternate',
       loop: true,
-      easing: 'easeInOutQuad',
-      delay: i * 200,
+      delay: i * 800,
     })
+  })
+  // Slow breathing drift on the grid overlay for extra depth.
+  anime({
+    targets: '.hero .grid-overlay',
+    translateX: [0, 18],
+    translateY: [0, 12],
+    scale: [1, 1.06],
+    duration: 22000,
+    easing: 'easeInOutSine',
+    direction: 'alternate',
+    loop: true,
   })
 }
 
@@ -300,6 +322,8 @@ onMounted(async () => {
 onUnmounted(() => {
   anime.remove('.hero-title .char')
   anime.remove('.hero-sub .char')
+  anime.remove('.hero .blob')
+  anime.remove('.hero .grid-overlay')
 })
 </script>
 
@@ -308,9 +332,9 @@ onUnmounted(() => {
     <!-- HERO -->
     <section class="hero" @mousemove="onHeroMouseMove">
       <div class="hero-bg" aria-hidden="true">
-        <div ref="el => blobRefs[0] = (el as HTMLElement)" class="blob b1" />
-        <div ref="el => blobRefs[1] = (el as HTMLElement)" class="blob b2" />
-        <div ref="el => blobRefs[2] = (el as HTMLElement)" class="blob b3" />
+        <div class="blob b1" />
+        <div class="blob b2" />
+        <div class="blob b3" />
         <div class="grid-overlay" />
       </div>
       <div ref="sparkContainer" class="spark-layer" aria-hidden="true" />

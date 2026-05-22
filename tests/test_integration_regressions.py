@@ -131,6 +131,16 @@ def test_usage_event_is_recorded_before_terminal_done_event():
 
 
 @pytest.mark.asyncio
+async def test_extract_quote_falls_back_without_network():
+    """Mock / non-fetchable URLs must never hit the network — use the snippet."""
+    from athena.tools.quote_extract import extract_quote
+
+    assert await extract_quote("https://example.com/p", "RAG 成本", fallback="snippet 内容") == "snippet 内容"
+    assert await extract_quote("not-a-url", "x", fallback="fallback 文本") == "fallback 文本"
+    assert await extract_quote("", "x", fallback="") == ""
+
+
+@pytest.mark.asyncio
 async def test_mark_orphan_tasks_failed_updates_snapshot_status(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
