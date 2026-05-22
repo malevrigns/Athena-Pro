@@ -12,6 +12,7 @@ from athena.research.persistence import ResearchRepository
 from athena.tools.search import SearchClient
 
 from .baseline_tools import build_baseline_extract_tool, build_baseline_rank_tool
+from .benchmark_tools import build_benchmark_extract_tool
 from .citation_graph import build_citation_graph_tool
 from .evidence_tools import build_claim_extract_tool
 from .idea_tools import build_idea_rank_tool
@@ -29,6 +30,7 @@ _REPO_ONLY_BUILDERS = (
     build_taxonomy_tool,
     build_baseline_extract_tool,
     build_baseline_rank_tool,
+    build_benchmark_extract_tool,
     build_idea_rank_tool,
 )
 

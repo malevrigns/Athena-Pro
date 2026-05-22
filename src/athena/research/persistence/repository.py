@@ -12,6 +12,7 @@ from abc import ABC, abstractmethod
 
 from athena.research.domain import (
     BaselineCandidate,
+    Benchmark,
     Claim,
     Evidence,
     MethodTaxonomy,
@@ -213,3 +214,19 @@ class ResearchRepository(ABC):
     @abstractmethod
     async def list_project_ideas(self, project_id: str) -> list[ResearchIdea]:
         """Return research ideas for a project ordered by creation time."""
+
+    @abstractmethod
+    async def create_benchmark(self, benchmark: Benchmark) -> None:
+        """Insert a new benchmark candidate."""
+
+    @abstractmethod
+    async def upsert_benchmark(self, benchmark: Benchmark) -> None:
+        """Insert the benchmark, or update it in place if its id already exists."""
+
+    @abstractmethod
+    async def get_benchmark(self, benchmark_id: str) -> Benchmark | None:
+        """Return a benchmark, or None if it does not exist."""
+
+    @abstractmethod
+    async def list_project_benchmarks(self, project_id: str) -> list[Benchmark]:
+        """Return a project's benchmarks ranked by adoption (most-used first)."""

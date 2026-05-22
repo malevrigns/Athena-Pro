@@ -18,7 +18,14 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from .enums import CheckpointStatus, CheckpointType, PaperScreeningStatus, ProjectStatus, ReviewDecision
+from .enums import (
+    CheckpointStatus,
+    CheckpointType,
+    PaperScreeningStatus,
+    ProjectStatus,
+    ReviewDecision,
+    SelectionStatus,
+)
 
 
 def utcnow() -> datetime:
@@ -147,6 +154,27 @@ class BaselineCandidate(BaseModel):
     rank_score: float | None = None
     selection_reason: str | None = None
     status: str = "candidate"
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class Benchmark(BaseModel):
+    """A candidate evaluation benchmark — a dataset paired with its metrics.
+
+    Benchmarks are derived from the paper library: `adoption_count` is how many
+    project papers evaluate on the dataset, which is the signal for how
+    standard / comparable the benchmark is.
+    """
+
+    id: str = Field(default_factory=lambda: _id("bench"))
+    project_id: str
+    name: str
+    dataset: str
+    metrics: list[str] = Field(default_factory=list)
+    task: str | None = None
+    source_paper_ids: list[str] = Field(default_factory=list)
+    adoption_count: int = 0
+    status: SelectionStatus = SelectionStatus.candidate
+    selection_reason: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
 
 

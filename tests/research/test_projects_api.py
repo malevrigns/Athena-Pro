@@ -794,3 +794,63 @@ async def test_run_project_drives_a_research_session(
             assert result["project_id"] == project["id"]
             assert result["started"] is True
             assert result["loop_result"]["outcome"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_benchmark_and_selection_endpoints(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    _configure_env(monkeypatch, tmp_path)
+
+    from athena.api.main import create_app
+
+    app = create_app()
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            project = (
+                await client.post(
+                    "/v1/projects",
+                    json={"title": "RAG", "research_question": "Which benchmark and baseline?"},
+                )
+            ).json()
+            await client.post(
+                f"/v1/projects/{project['id']}/papers",
+                json={"title": "RAG", "dataset_mentions": ["MMLU"]},
+            )
+
+            extracted = await client.post(
+                f"/v1/projects/{project['id']}/benchmarks/extract", json={}
+            )
+            assert extracted.json()["structured_output"]["created_count"] == 1
+            benchmarks = await client.get(f"/v1/projects/{project['id']}/benchmarks")
+            assert benchmarks.status_code == 200
+            benchmark = benchmarks.json()[0]
+            assert benchmark["dataset"] == "MMLU"
+
+            selected = await client.post(
+                f"/v1/projects/{project['id']}/benchmarks/{benchmark['id']}/select",
+                json={"reason": "most comparable"},
+            )
+            assert selected.status_code == 200
+            assert selected.json()["status"] == "selected"
+
+            baseline = (
+                await client.post(
+                    f"/v1/projects/{project['id']}/baselines",
+                    json={"name": "DPR", "method_summary": "dense retrieval"},
+                )
+            ).json()
+            chosen = await client.post(
+                f"/v1/projects/{project['id']}/baselines/{baseline['id']}/select",
+                json={"reason": "best reproducibility"},
+            )
+            assert chosen.status_code == 200
+            assert chosen.json()["status"] == "selected"
+            assert chosen.json()["selection_reason"] == "best reproducibility"
+
+            missing = await client.post(
+                f"/v1/projects/{project['id']}/baselines/base_missing/select", json={}
+            )
+            assert missing.status_code == 404

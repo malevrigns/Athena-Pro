@@ -14,6 +14,7 @@ _EXPECTED_TOOLS = {
     "taxonomy_build",
     "baseline_extract",
     "baseline_rank",
+    "benchmark_extract",
     "idea_rank",
 }
 

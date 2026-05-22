@@ -13,6 +13,7 @@ from athena.persistence import get_store
 from athena.research.artifacts import PaperMatrix, build_paper_matrix, paper_matrix_to_csv
 from athena.research.domain import (
     BaselineCandidate,
+    Benchmark,
     Claim,
     Evidence,
     MethodTaxonomy,
@@ -39,9 +40,12 @@ from athena.research.services import create_project as create_research_project
 from athena.research.services import execute_tool_with_trace
 from athena.research.services import get_project_tool_trace
 from athena.research.services import get_tool_trace
+from athena.research.services import select_baseline as select_project_baseline
+from athena.research.services import select_benchmark as select_project_benchmark
 from athena.research.services.evidence_audit import EvidenceAuditReport
 from athena.research.tools import ToolResult, ToolRouter, ToolSpec, ToolTraceItem
 from athena.research.tools.baseline_tools import build_baseline_extract_tool, build_baseline_rank_tool
+from athena.research.tools.benchmark_tools import build_benchmark_extract_tool
 from athena.research.tools.citation_graph import build_citation_graph_tool
 from athena.research.tools.evidence_tools import build_claim_extract_tool
 from athena.research.tools.idea_tools import build_idea_rank_tool
@@ -157,6 +161,10 @@ class RunProjectRequest(BaseModel):
 
 class ReviewDecisionRequest(BaseModel):
     comment: str | None = Field(default=None, max_length=4000)
+
+
+class SelectionRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=4000)
 
 
 # --- shared helpers ------------------------------------------------------
@@ -501,6 +509,21 @@ async def rank_project_baselines(project_id: str, body: BaselineRankRequest):
     )
 
 
+@router.post(
+    "/v1/projects/{project_id}/baselines/{baseline_id}/select", response_model=BaselineCandidate
+)
+async def select_baseline(project_id: str, baseline_id: str, body: SelectionRequest):
+    """Human-only: mark a baseline as selected (not exposed as an agent tool)."""
+    repo = await _research_repo()
+    await _get_project_or_404(repo, project_id)
+    try:
+        return await select_project_baseline(
+            repo, project_id=project_id, baseline_id=baseline_id, reason=body.reason
+        )
+    except LookupError as exc:
+        raise HTTPException(404, "baseline not found") from exc
+
+
 # --- Phase 5: ideas ------------------------------------------------------
 
 
@@ -523,3 +546,31 @@ async def create_idea(project_id: str, body: CreateIdeaRequest):
 @router.post("/v1/projects/{project_id}/ideas/rank", response_model=ToolResult)
 async def rank_project_ideas(project_id: str, body: TaskRefRequest):
     return await _run_project_tool(project_id, build_idea_rank_tool, task_id=body.task_id)
+
+
+# --- Phase 5: benchmarks -------------------------------------------------
+
+
+@router.get("/v1/projects/{project_id}/benchmarks", response_model=list[Benchmark])
+async def list_project_benchmarks(project_id: str):
+    repo = await _research_repo()
+    await _get_project_or_404(repo, project_id)
+    return await repo.list_project_benchmarks(project_id)
+
+
+@router.post("/v1/projects/{project_id}/benchmarks/extract", response_model=ToolResult)
+async def extract_project_benchmarks(project_id: str, body: TaskRefRequest):
+    return await _run_project_tool(project_id, build_benchmark_extract_tool, task_id=body.task_id)
+
+
+@router.post("/v1/projects/{project_id}/benchmarks/{benchmark_id}/select", response_model=Benchmark)
+async def select_benchmark(project_id: str, benchmark_id: str, body: SelectionRequest):
+    """Human-only: mark a benchmark as selected (not exposed as an agent tool)."""
+    repo = await _research_repo()
+    await _get_project_or_404(repo, project_id)
+    try:
+        return await select_project_benchmark(
+            repo, project_id=project_id, benchmark_id=benchmark_id, reason=body.reason
+        )
+    except LookupError as exc:
+        raise HTTPException(404, "benchmark not found") from exc

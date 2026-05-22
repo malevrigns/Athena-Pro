@@ -9,9 +9,11 @@ from .enums import (
     PaperScreeningStatus,
     ProjectStatus,
     ReviewDecision,
+    SelectionStatus,
 )
 from .models import (
     BaselineCandidate,
+    Benchmark,
     Claim,
     CodeArtifact,
     Evidence,
@@ -32,7 +34,9 @@ __all__ = [
     "PaperScreeningStatus",
     "ProjectStatus",
     "ReviewDecision",
+    "SelectionStatus",
     "BaselineCandidate",
+    "Benchmark",
     "Claim",
     "CodeArtifact",
     "Evidence",

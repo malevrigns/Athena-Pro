@@ -43,6 +43,14 @@ class CheckpointStatus(StrEnum):
     decided = "decided"
 
 
+class SelectionStatus(StrEnum):
+    """Lifecycle of a selectable research asset (baseline, benchmark)."""
+
+    candidate = "candidate"
+    selected = "selected"
+    rejected = "rejected"
+
+
 class ClaimType(StrEnum):
     """Canonical claim categories (roadmap section 5.4)."""
 

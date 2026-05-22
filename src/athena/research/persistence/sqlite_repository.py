@@ -1,9 +1,13 @@
 """SQLite-backed implementation of the Research OS persistence contract.
 
-The repository does not own the database connection — it borrows the
-connection and lock from the existing `SQLiteStore`, so Research OS writes
-stay serialised with legacy task/event writes. Serialization is explicit
-(column by column) so schema drift fails loudly instead of silently.
+The repository borrows the connection and lock from the existing `SQLiteStore`,
+so Research OS writes stay serialised with legacy task/event writes.
+
+Model <-> row mapping is handled by one generic codec (`_encode_row` /
+`_decode_row`) driven by the per-table column lists below. The single
+convention it relies on: a column whose name ends in `_json` stores a
+JSON-encoded list/dict field; every other column maps 1:1 to a model field of
+the same name. datetimes and enums are coerced by the codec and by Pydantic.
 """
 
 from __future__ import annotations
@@ -11,35 +15,28 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import datetime, timezone
+from enum import Enum
+from typing import TypeVar
 from uuid import uuid4
 
 import aiosqlite
+from pydantic import BaseModel
 
 from athena.research.domain import (
     BaselineCandidate,
-    CheckpointStatus,
-    CheckpointType,
+    Benchmark,
     Claim,
     Evidence,
     MethodTaxonomy,
     Paper,
     PaperNote,
     PaperScreeningStatus,
-    ProjectStatus,
     ResearchIdea,
     ResearchProject,
     ReviewCheckpoint,
-    ReviewDecision,
 )
 from athena.research.events import ResearchEvent
-from athena.research.tools import (
-    PermissionLevel,
-    ToolCallRecord,
-    ToolCallStatus,
-    ToolObservationRecord,
-    ToolObservationStatus,
-    utcnow,
-)
+from athena.research.tools import ToolCallRecord, ToolObservationRecord, utcnow
 
 from .repository import ResearchRepository
 
@@ -174,6 +171,20 @@ CREATE TABLE IF NOT EXISTS research_ideas (
     created_at              TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS benchmarks (
+    id                    TEXT PRIMARY KEY,
+    project_id            TEXT NOT NULL,
+    name                  TEXT NOT NULL,
+    dataset               TEXT NOT NULL,
+    metrics_json          TEXT NOT NULL,
+    task                  TEXT,
+    source_paper_ids_json TEXT NOT NULL,
+    adoption_count        INTEGER NOT NULL,
+    status                TEXT NOT NULL,
+    selection_reason      TEXT,
+    created_at            TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS experiment_specs (
     id                    TEXT PRIMARY KEY,
     project_id            TEXT NOT NULL,
@@ -280,6 +291,7 @@ CREATE INDEX IF NOT EXISTS idx_evidence_claim ON evidence(claim_id);
 CREATE INDEX IF NOT EXISTS idx_method_taxonomies_project ON method_taxonomies(project_id);
 CREATE INDEX IF NOT EXISTS idx_baseline_candidates_project ON baseline_candidates(project_id);
 CREATE INDEX IF NOT EXISTS idx_research_ideas_project ON research_ideas(project_id);
+CREATE INDEX IF NOT EXISTS idx_benchmarks_project ON benchmarks(project_id, adoption_count DESC);
 CREATE INDEX IF NOT EXISTS idx_experiment_specs_project ON experiment_specs(project_id);
 CREATE INDEX IF NOT EXISTS idx_experiment_runs_spec ON experiment_runs(experiment_spec_id);
 CREATE INDEX IF NOT EXISTS idx_code_artifacts_project ON code_artifacts(project_id);
@@ -294,8 +306,8 @@ CREATE INDEX IF NOT EXISTS idx_research_events_task ON research_events(task_id, 
 CREATE INDEX IF NOT EXISTS idx_research_events_project ON research_events(project_id, seq);
 """
 
-# Column order is the single source of truth shared by INSERT, SELECT and the
-# row (de)serialization helpers below — keep all four in sync.
+# Each column list is the single source of truth for a table, shared by its
+# INSERT, SELECT and the row codec. A `_json` suffix marks a JSON text column.
 _PROJECT_COLUMNS = (
     "id, title, research_question, field, constraints_json, "
     "target_venue, status, owner, created_at, updated_at"
@@ -347,6 +359,12 @@ _IDEA_COLUMNS = (
     "evaluation_plan, novelty_score, feasibility_score, risk_score, overall_score, "
     "evidence_ids_json, status, created_at"
 )
+_BENCHMARK_COLUMNS = (
+    "id, project_id, name, dataset, metrics_json, task, source_paper_ids_json, "
+    "adoption_count, status, selection_reason, created_at"
+)
+
+_ModelT = TypeVar("_ModelT", bound=BaseModel)
 
 
 def _id(prefix: str) -> str:
@@ -354,9 +372,18 @@ def _id(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex}"
 
 
-def _prefixed(columns: str, table: str) -> str:
-    """Qualify a comma-separated column list with a table name (for JOIN SELECTs)."""
-    return ", ".join(f"{table}.{name.strip()}" for name in columns.split(","))
+def _columns(spec: str) -> list[str]:
+    return [name.strip() for name in spec.split(",")]
+
+
+def _prefixed(spec: str, table: str) -> str:
+    """Qualify a column list with a table name (for JOIN SELECTs)."""
+    return ", ".join(f"{table}.{name}" for name in _columns(spec))
+
+
+def _placeholders(spec: str) -> str:
+    """Return the `?, ?, ...` placeholder list matching a column spec."""
+    return ", ".join("?" for _ in _columns(spec))
 
 
 def _datetime_to_iso_utc(dt: datetime) -> str:
@@ -364,8 +391,8 @@ def _datetime_to_iso_utc(dt: datetime) -> str:
 
     Naive datetimes are assumed to already be UTC; aware datetimes are
     converted. Always emitting a `+00:00` offset with microsecond precision
-    keeps the lexicographic ordering used by `list_projects` (ORDER BY a TEXT
-    column) consistent with true chronological ordering.
+    keeps lexicographic ordering (ORDER BY a TEXT column) consistent with true
+    chronological ordering.
     """
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
@@ -374,382 +401,40 @@ def _datetime_to_iso_utc(dt: datetime) -> str:
     return dt.isoformat(timespec="microseconds")
 
 
-def _project_to_row(project: ResearchProject) -> tuple[object, ...]:
-    """Map a ResearchProject to a positional row matching `_PROJECT_COLUMNS`."""
-    return (
-        project.id,
-        project.title,
-        project.research_question,
-        project.field,
-        json.dumps(project.constraints, ensure_ascii=False),
-        project.target_venue,
-        project.status.value,
-        project.owner,
-        _datetime_to_iso_utc(project.created_at),
-        _datetime_to_iso_utc(project.updated_at),
-    )
+def _encode_row(model: BaseModel, columns: str) -> tuple[object, ...]:
+    """Serialize a model to a positional row matching `columns`.
+
+    `*_json` columns receive the JSON-encoded field; datetimes become ISO UTC
+    strings and enums their value. The inverse of `_decode_row`.
+    """
+    values: list[object] = []
+    for column in _columns(columns):
+        if column.endswith("_json"):
+            field = getattr(model, column[:-5])
+            values.append(json.dumps(field, ensure_ascii=False, default=str))
+            continue
+        value = getattr(model, column)
+        if isinstance(value, datetime):
+            value = _datetime_to_iso_utc(value)
+        elif isinstance(value, Enum):
+            value = value.value
+        values.append(value)
+    return tuple(values)
 
 
-def _row_to_project(row: tuple) -> ResearchProject:
-    """Reconstruct a ResearchProject from a `_PROJECT_COLUMNS` row."""
-    return ResearchProject(
-        id=row[0],
-        title=row[1],
-        research_question=row[2],
-        field=row[3],
-        constraints=json.loads(row[4]),
-        target_venue=row[5],
-        status=ProjectStatus(row[6]),
-        owner=row[7],
-        created_at=datetime.fromisoformat(row[8]),
-        updated_at=datetime.fromisoformat(row[9]),
-    )
+def _decode_row(model_cls: type[_ModelT], columns: str, row: tuple) -> _ModelT:
+    """Reconstruct a model from a positional row matching `columns`.
 
-
-def _paper_to_row(paper: Paper) -> tuple[object, ...]:
-    return (
-        paper.id,
-        paper.project_id,
-        paper.title,
-        json.dumps(paper.authors, ensure_ascii=False),
-        paper.year,
-        paper.venue,
-        paper.abstract,
-        paper.url,
-        paper.pdf_url,
-        paper.arxiv_id,
-        paper.doi,
-        paper.semantic_scholar_id,
-        paper.citation_count,
-        paper.code_url,
-        json.dumps(paper.dataset_mentions, ensure_ascii=False),
-        paper.screening_status.value,
-        paper.relevance_score,
-        _datetime_to_iso_utc(paper.created_at),
-    )
-
-
-def _row_to_paper(row: tuple) -> Paper:
-    return Paper(
-        id=row[0],
-        project_id=row[1],
-        title=row[2],
-        authors=json.loads(row[3]),
-        year=row[4],
-        venue=row[5],
-        abstract=row[6],
-        url=row[7],
-        pdf_url=row[8],
-        arxiv_id=row[9],
-        doi=row[10],
-        semantic_scholar_id=row[11],
-        citation_count=row[12],
-        code_url=row[13],
-        dataset_mentions=json.loads(row[14]),
-        screening_status=PaperScreeningStatus(row[15]),
-        relevance_score=row[16],
-        created_at=datetime.fromisoformat(row[17]),
-    )
-
-
-def _paper_note_to_row(note: PaperNote) -> tuple[object, ...]:
-    return (
-        note.id,
-        note.paper_id,
-        note.problem,
-        note.method,
-        note.training_setup,
-        json.dumps(note.datasets, ensure_ascii=False),
-        json.dumps(note.metrics, ensure_ascii=False),
-        json.dumps(note.baselines, ensure_ascii=False),
-        note.main_results,
-        note.limitations,
-        note.reproducibility_notes,
-        json.dumps(note.important_sections, ensure_ascii=False),
-        _datetime_to_iso_utc(note.created_at),
-    )
-
-
-def _row_to_paper_note(row: tuple) -> PaperNote:
-    return PaperNote(
-        id=row[0],
-        paper_id=row[1],
-        problem=row[2],
-        method=row[3],
-        training_setup=row[4],
-        datasets=json.loads(row[5]),
-        metrics=json.loads(row[6]),
-        baselines=json.loads(row[7]),
-        main_results=row[8],
-        limitations=row[9],
-        reproducibility_notes=row[10],
-        important_sections=json.loads(row[11]),
-        created_at=datetime.fromisoformat(row[12]),
-    )
-
-
-def _tool_call_to_row(call: ToolCallRecord) -> tuple[object, ...]:
-    return (
-        call.id,
-        call.task_id,
-        call.project_id,
-        call.tool_name,
-        json.dumps(call.arguments, ensure_ascii=False, default=str),
-        call.permission_level.value,
-        call.approval_status,
-        call.status.value,
-        _datetime_to_iso_utc(call.created_at),
-        _datetime_to_iso_utc(call.started_at) if call.started_at else None,
-        _datetime_to_iso_utc(call.finished_at) if call.finished_at else None,
-    )
-
-
-def _row_to_tool_call(row: tuple) -> ToolCallRecord:
-    return ToolCallRecord(
-        id=row[0],
-        task_id=row[1],
-        project_id=row[2],
-        tool_name=row[3],
-        arguments=json.loads(row[4]),
-        permission_level=PermissionLevel(row[5]),
-        approval_status=row[6],
-        status=ToolCallStatus(row[7]),
-        created_at=datetime.fromisoformat(row[8]),
-        started_at=datetime.fromisoformat(row[9]) if row[9] else None,
-        finished_at=datetime.fromisoformat(row[10]) if row[10] else None,
-    )
-
-
-def _tool_observation_to_row(observation: ToolObservationRecord) -> tuple[object, ...]:
-    return (
-        observation.id,
-        observation.tool_call_id,
-        observation.status.value,
-        observation.summary,
-        json.dumps(observation.structured_output, ensure_ascii=False, default=str),
-        observation.raw_output_ref,
-        observation.error,
-        _datetime_to_iso_utc(observation.created_at),
-    )
-
-
-def _row_to_tool_observation(row: tuple) -> ToolObservationRecord:
-    return ToolObservationRecord(
-        id=row[0],
-        tool_call_id=row[1],
-        status=ToolObservationStatus(row[2]),
-        summary=row[3],
-        structured_output=json.loads(row[4]),
-        raw_output_ref=row[5],
-        error=row[6],
-        created_at=datetime.fromisoformat(row[7]),
-    )
-
-
-def _claim_to_row(claim: Claim) -> tuple[object, ...]:
-    return (
-        claim.id,
-        claim.project_id,
-        claim.text,
-        claim.claim_type,
-        claim.paper_id,
-        claim.section,
-        claim.confidence,
-        json.dumps(claim.evidence_ids, ensure_ascii=False),
-        claim.status,
-        _datetime_to_iso_utc(claim.created_at),
-    )
-
-
-def _row_to_claim(row: tuple) -> Claim:
-    return Claim(
-        id=row[0],
-        project_id=row[1],
-        text=row[2],
-        claim_type=row[3],
-        paper_id=row[4],
-        section=row[5],
-        confidence=row[6],
-        evidence_ids=json.loads(row[7]),
-        status=row[8],
-        created_at=datetime.fromisoformat(row[9]),
-    )
-
-
-def _evidence_to_row(evidence: Evidence) -> tuple[object, ...]:
-    return (
-        evidence.id,
-        evidence.claim_id,
-        evidence.source_type,
-        evidence.source_url,
-        evidence.paper_id,
-        evidence.section,
-        evidence.quote,
-        evidence.normalized_text,
-        evidence.confidence,
-        evidence.verification_status,
-        _datetime_to_iso_utc(evidence.created_at),
-    )
-
-
-def _row_to_evidence(row: tuple) -> Evidence:
-    return Evidence(
-        id=row[0],
-        claim_id=row[1],
-        source_type=row[2],
-        source_url=row[3],
-        paper_id=row[4],
-        section=row[5],
-        quote=row[6],
-        normalized_text=row[7],
-        confidence=row[8],
-        verification_status=row[9],
-        created_at=datetime.fromisoformat(row[10]),
-    )
-
-
-def _checkpoint_to_row(checkpoint: ReviewCheckpoint) -> tuple[object, ...]:
-    return (
-        checkpoint.id,
-        checkpoint.task_id,
-        checkpoint.project_id,
-        checkpoint.checkpoint_type.value,
-        checkpoint.title,
-        json.dumps(checkpoint.content, ensure_ascii=False, default=str),
-        checkpoint.status.value,
-        checkpoint.decision.value if checkpoint.decision else None,
-        checkpoint.comment,
-        _datetime_to_iso_utc(checkpoint.created_at),
-        _datetime_to_iso_utc(checkpoint.decided_at) if checkpoint.decided_at else None,
-    )
-
-
-def _row_to_checkpoint(row: tuple) -> ReviewCheckpoint:
-    return ReviewCheckpoint(
-        id=row[0],
-        task_id=row[1],
-        project_id=row[2],
-        checkpoint_type=CheckpointType(row[3]),
-        title=row[4],
-        content=json.loads(row[5]),
-        status=CheckpointStatus(row[6]),
-        decision=ReviewDecision(row[7]) if row[7] else None,
-        comment=row[8],
-        created_at=datetime.fromisoformat(row[9]),
-        decided_at=datetime.fromisoformat(row[10]) if row[10] else None,
-    )
-
-
-def _taxonomy_to_row(taxonomy: MethodTaxonomy) -> tuple[object, ...]:
-    return (
-        taxonomy.id,
-        taxonomy.project_id,
-        json.dumps(taxonomy.nodes, ensure_ascii=False, default=str),
-        json.dumps(taxonomy.edges, ensure_ascii=False, default=str),
-        taxonomy.summary,
-        json.dumps(taxonomy.open_problems, ensure_ascii=False),
-        _datetime_to_iso_utc(taxonomy.created_at),
-    )
-
-
-def _row_to_taxonomy(row: tuple) -> MethodTaxonomy:
-    return MethodTaxonomy(
-        id=row[0],
-        project_id=row[1],
-        nodes=json.loads(row[2]),
-        edges=json.loads(row[3]),
-        summary=row[4],
-        open_problems=json.loads(row[5]),
-        created_at=datetime.fromisoformat(row[6]),
-    )
-
-
-def _baseline_to_row(baseline: BaselineCandidate) -> tuple[object, ...]:
-    return (
-        baseline.id,
-        baseline.project_id,
-        baseline.name,
-        baseline.method_summary,
-        baseline.paper_id,
-        baseline.code_url,
-        baseline.dataset,
-        baseline.metric,
-        baseline.reported_score,
-        baseline.reproduction_difficulty,
-        baseline.hardware_requirement,
-        baseline.expected_runtime,
-        baseline.license,
-        baseline.rank_score,
-        baseline.selection_reason,
-        baseline.status,
-        _datetime_to_iso_utc(baseline.created_at),
-    )
-
-
-def _row_to_baseline(row: tuple) -> BaselineCandidate:
-    return BaselineCandidate(
-        id=row[0],
-        project_id=row[1],
-        name=row[2],
-        method_summary=row[3],
-        paper_id=row[4],
-        code_url=row[5],
-        dataset=row[6],
-        metric=row[7],
-        reported_score=row[8],
-        reproduction_difficulty=row[9],
-        hardware_requirement=row[10],
-        expected_runtime=row[11],
-        license=row[12],
-        rank_score=row[13],
-        selection_reason=row[14],
-        status=row[15],
-        created_at=datetime.fromisoformat(row[16]),
-    )
-
-
-def _idea_to_row(idea: ResearchIdea) -> tuple[object, ...]:
-    return (
-        idea.id,
-        idea.project_id,
-        idea.title,
-        idea.motivation,
-        idea.core_hypothesis,
-        idea.method_sketch,
-        idea.expected_advantage,
-        json.dumps(idea.required_baselines, ensure_ascii=False),
-        json.dumps(idea.required_datasets, ensure_ascii=False),
-        idea.evaluation_plan,
-        idea.novelty_score,
-        idea.feasibility_score,
-        idea.risk_score,
-        idea.overall_score,
-        json.dumps(idea.evidence_ids, ensure_ascii=False),
-        idea.status,
-        _datetime_to_iso_utc(idea.created_at),
-    )
-
-
-def _row_to_idea(row: tuple) -> ResearchIdea:
-    return ResearchIdea(
-        id=row[0],
-        project_id=row[1],
-        title=row[2],
-        motivation=row[3],
-        core_hypothesis=row[4],
-        method_sketch=row[5],
-        expected_advantage=row[6],
-        required_baselines=json.loads(row[7]),
-        required_datasets=json.loads(row[8]),
-        evaluation_plan=row[9],
-        novelty_score=row[10],
-        feasibility_score=row[11],
-        risk_score=row[12],
-        overall_score=row[13],
-        evidence_ids=json.loads(row[14]),
-        status=row[15],
-        created_at=datetime.fromisoformat(row[16]),
-    )
+    `*_json` columns are JSON-decoded; Pydantic coerces ISO datetime and
+    enum-value strings back on validation. The inverse of `_encode_row`.
+    """
+    data: dict[str, object] = {}
+    for column, value in zip(_columns(columns), row, strict=True):
+        if column.endswith("_json"):
+            data[column[:-5]] = json.loads(value)
+        else:
+            data[column] = value
+    return model_cls.model_validate(data)
 
 
 class ResearchSQLiteRepository(ResearchRepository):
@@ -763,103 +448,88 @@ class ResearchSQLiteRepository(ResearchRepository):
         self._conn = conn
         self._lock = lock
 
-    async def create_project(self, project: ResearchProject) -> None:
+    async def _insert(self, table: str, columns: str, model: BaseModel) -> None:
         async with self._lock:
             await self._conn.execute(
-                f"INSERT INTO research_projects({_PROJECT_COLUMNS}) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                _project_to_row(project),
+                f"INSERT INTO {table}({columns}) VALUES({_placeholders(columns)})",
+                _encode_row(model, columns),
             )
             await self._conn.commit()
 
-    async def upsert_project(self, project: ResearchProject) -> None:
+    async def _upsert(self, table: str, columns: str, model: BaseModel, *, mutable: str) -> None:
+        """Insert `model`, or update the listed `mutable` columns on id conflict."""
+        assignments = ", ".join(f"{name} = excluded.{name}" for name in _columns(mutable))
         async with self._lock:
             await self._conn.execute(
-                f"""
-                INSERT INTO research_projects({_PROJECT_COLUMNS})
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    title = excluded.title,
-                    research_question = excluded.research_question,
-                    field = excluded.field,
-                    constraints_json = excluded.constraints_json,
-                    target_venue = excluded.target_venue,
-                    status = excluded.status,
-                    owner = excluded.owner,
-                    updated_at = excluded.updated_at
-                """,
-                _project_to_row(project),
+                f"INSERT INTO {table}({columns}) VALUES({_placeholders(columns)}) "
+                f"ON CONFLICT(id) DO UPDATE SET {assignments}",
+                _encode_row(model, columns),
             )
             await self._conn.commit()
 
-    async def get_project(self, project_id: str) -> ResearchProject | None:
+    async def _fetch_one(self, sql: str, params: tuple) -> tuple | None:
         async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_PROJECT_COLUMNS} FROM research_projects WHERE id = ?",
-                (project_id,),
-            )
+            cursor = await self._conn.execute(sql, params)
             row = await cursor.fetchone()
             await cursor.close()
-        return _row_to_project(row) if row else None
+        return row
 
-    async def list_projects(self, limit: int = 50) -> list[ResearchProject]:
+    async def _fetch_all(self, sql: str, params: tuple) -> list[tuple]:
         async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_PROJECT_COLUMNS} FROM research_projects "
-                "ORDER BY updated_at DESC LIMIT ?",
-                (limit,),
-            )
+            cursor = await self._conn.execute(sql, params)
             rows = await cursor.fetchall()
             await cursor.close()
-        return [_row_to_project(row) for row in rows]
+        return list(rows)
+
+    # --- projects --------------------------------------------------------
+
+    async def create_project(self, project: ResearchProject) -> None:
+        await self._insert("research_projects", _PROJECT_COLUMNS, project)
+
+    async def upsert_project(self, project: ResearchProject) -> None:
+        await self._upsert(
+            "research_projects",
+            _PROJECT_COLUMNS,
+            project,
+            mutable="title, research_question, field, constraints_json, "
+            "target_venue, status, owner, updated_at",
+        )
+
+    async def get_project(self, project_id: str) -> ResearchProject | None:
+        row = await self._fetch_one(
+            f"SELECT {_PROJECT_COLUMNS} FROM research_projects WHERE id = ?",
+            (project_id,),
+        )
+        return _decode_row(ResearchProject, _PROJECT_COLUMNS, row) if row else None
+
+    async def list_projects(self, limit: int = 50) -> list[ResearchProject]:
+        rows = await self._fetch_all(
+            f"SELECT {_PROJECT_COLUMNS} FROM research_projects "
+            "ORDER BY updated_at DESC LIMIT ?",
+            (limit,),
+        )
+        return [_decode_row(ResearchProject, _PROJECT_COLUMNS, row) for row in rows]
+
+    # --- papers ----------------------------------------------------------
 
     async def create_paper(self, paper: Paper) -> None:
-        async with self._lock:
-            await self._conn.execute(
-                f"INSERT INTO papers({_PAPER_COLUMNS}) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                _paper_to_row(paper),
-            )
-            await self._conn.commit()
+        await self._insert("papers", _PAPER_COLUMNS, paper)
 
     async def upsert_paper(self, paper: Paper) -> None:
-        async with self._lock:
-            await self._conn.execute(
-                f"""
-                INSERT INTO papers({_PAPER_COLUMNS})
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    project_id = excluded.project_id,
-                    title = excluded.title,
-                    authors_json = excluded.authors_json,
-                    year = excluded.year,
-                    venue = excluded.venue,
-                    abstract = excluded.abstract,
-                    url = excluded.url,
-                    pdf_url = excluded.pdf_url,
-                    arxiv_id = excluded.arxiv_id,
-                    doi = excluded.doi,
-                    semantic_scholar_id = excluded.semantic_scholar_id,
-                    citation_count = excluded.citation_count,
-                    code_url = excluded.code_url,
-                    dataset_mentions_json = excluded.dataset_mentions_json,
-                    screening_status = excluded.screening_status,
-                    relevance_score = excluded.relevance_score,
-                    created_at = excluded.created_at
-                """,
-                _paper_to_row(paper),
-            )
-            await self._conn.commit()
+        await self._upsert(
+            "papers",
+            _PAPER_COLUMNS,
+            paper,
+            mutable="project_id, title, authors_json, year, venue, abstract, url, "
+            "pdf_url, arxiv_id, doi, semantic_scholar_id, citation_count, code_url, "
+            "dataset_mentions_json, screening_status, relevance_score, created_at",
+        )
 
     async def get_paper(self, paper_id: str) -> Paper | None:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_PAPER_COLUMNS} FROM papers WHERE id = ?",
-                (paper_id,),
-            )
-            row = await cursor.fetchone()
-            await cursor.close()
-        return _row_to_paper(row) if row else None
+        row = await self._fetch_one(
+            f"SELECT {_PAPER_COLUMNS} FROM papers WHERE id = ?", (paper_id,)
+        )
+        return _decode_row(Paper, _PAPER_COLUMNS, row) if row else None
 
     async def list_project_papers(
         self,
@@ -868,128 +538,74 @@ class ResearchSQLiteRepository(ResearchRepository):
         limit: int = 100,
         screening_status: PaperScreeningStatus | None = None,
     ) -> list[Paper]:
-        if screening_status is None:
-            sql = f"SELECT {_PAPER_COLUMNS} FROM papers WHERE project_id = ? "
-            params: tuple[object, ...] = (project_id, limit)
-        else:
-            sql = (
-                f"SELECT {_PAPER_COLUMNS} FROM papers WHERE project_id = ? "
-                "AND screening_status = ? "
-            )
-            params = (project_id, screening_status.value, limit)
-        async with self._lock:
-            cursor = await self._conn.execute(
-                sql + "ORDER BY created_at DESC LIMIT ?",
-                params,
-            )
-            rows = await cursor.fetchall()
-            await cursor.close()
-        return [_row_to_paper(row) for row in rows]
+        sql = f"SELECT {_PAPER_COLUMNS} FROM papers WHERE project_id = ? "
+        params: tuple[object, ...] = (project_id,)
+        if screening_status is not None:
+            sql += "AND screening_status = ? "
+            params += (screening_status.value,)
+        rows = await self._fetch_all(sql + "ORDER BY created_at DESC LIMIT ?", params + (limit,))
+        return [_decode_row(Paper, _PAPER_COLUMNS, row) for row in rows]
+
+    # --- paper notes -----------------------------------------------------
 
     async def create_paper_note(self, note: PaperNote) -> None:
-        async with self._lock:
-            await self._conn.execute(
-                f"INSERT INTO paper_notes({_PAPER_NOTE_COLUMNS}) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                _paper_note_to_row(note),
-            )
-            await self._conn.commit()
+        await self._insert("paper_notes", _PAPER_NOTE_COLUMNS, note)
 
     async def upsert_paper_note(self, note: PaperNote) -> None:
-        async with self._lock:
-            await self._conn.execute(
-                f"""
-                INSERT INTO paper_notes({_PAPER_NOTE_COLUMNS})
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    paper_id = excluded.paper_id,
-                    problem = excluded.problem,
-                    method = excluded.method,
-                    training_setup = excluded.training_setup,
-                    datasets_json = excluded.datasets_json,
-                    metrics_json = excluded.metrics_json,
-                    baselines_json = excluded.baselines_json,
-                    main_results = excluded.main_results,
-                    limitations = excluded.limitations,
-                    reproducibility_notes = excluded.reproducibility_notes,
-                    important_sections_json = excluded.important_sections_json,
-                    created_at = excluded.created_at
-                """,
-                _paper_note_to_row(note),
-            )
-            await self._conn.commit()
+        await self._upsert(
+            "paper_notes",
+            _PAPER_NOTE_COLUMNS,
+            note,
+            mutable="paper_id, problem, method, training_setup, datasets_json, "
+            "metrics_json, baselines_json, main_results, limitations, "
+            "reproducibility_notes, important_sections_json, created_at",
+        )
 
     async def get_paper_note(self, note_id: str) -> PaperNote | None:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_PAPER_NOTE_COLUMNS} FROM paper_notes WHERE id = ?",
-                (note_id,),
-            )
-            row = await cursor.fetchone()
-            await cursor.close()
-        return _row_to_paper_note(row) if row else None
+        row = await self._fetch_one(
+            f"SELECT {_PAPER_NOTE_COLUMNS} FROM paper_notes WHERE id = ?", (note_id,)
+        )
+        return _decode_row(PaperNote, _PAPER_NOTE_COLUMNS, row) if row else None
 
     async def list_paper_notes(self, paper_id: str) -> list[PaperNote]:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_PAPER_NOTE_COLUMNS} FROM paper_notes WHERE paper_id = ? "
-                "ORDER BY created_at DESC",
-                (paper_id,),
-            )
-            rows = await cursor.fetchall()
-            await cursor.close()
-        return [_row_to_paper_note(row) for row in rows]
+        rows = await self._fetch_all(
+            f"SELECT {_PAPER_NOTE_COLUMNS} FROM paper_notes WHERE paper_id = ? "
+            "ORDER BY created_at DESC",
+            (paper_id,),
+        )
+        return [_decode_row(PaperNote, _PAPER_NOTE_COLUMNS, row) for row in rows]
+
+    # --- tool trace ------------------------------------------------------
 
     async def record_tool_call(self, call: ToolCallRecord) -> None:
-        async with self._lock:
-            await self._conn.execute(
-                f"INSERT INTO tool_calls({_TOOL_CALL_COLUMNS}) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                _tool_call_to_row(call),
-            )
-            await self._conn.commit()
+        await self._insert("tool_calls", _TOOL_CALL_COLUMNS, call)
 
     async def record_tool_observation(self, observation: ToolObservationRecord) -> None:
-        async with self._lock:
-            await self._conn.execute(
-                f"INSERT INTO tool_observations({_TOOL_OBSERVATION_COLUMNS}) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
-                _tool_observation_to_row(observation),
-            )
-            await self._conn.commit()
+        await self._insert("tool_observations", _TOOL_OBSERVATION_COLUMNS, observation)
 
     async def list_tool_calls(self, task_id: str) -> list[ToolCallRecord]:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_TOOL_CALL_COLUMNS} FROM tool_calls WHERE task_id = ? "
-                "ORDER BY created_at ASC",
-                (task_id,),
-            )
-            rows = await cursor.fetchall()
-            await cursor.close()
-        return [_row_to_tool_call(row) for row in rows]
+        rows = await self._fetch_all(
+            f"SELECT {_TOOL_CALL_COLUMNS} FROM tool_calls WHERE task_id = ? "
+            "ORDER BY created_at ASC",
+            (task_id,),
+        )
+        return [_decode_row(ToolCallRecord, _TOOL_CALL_COLUMNS, row) for row in rows]
 
     async def list_project_tool_calls(self, project_id: str) -> list[ToolCallRecord]:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_TOOL_CALL_COLUMNS} FROM tool_calls WHERE project_id = ? "
-                "ORDER BY created_at ASC",
-                (project_id,),
-            )
-            rows = await cursor.fetchall()
-            await cursor.close()
-        return [_row_to_tool_call(row) for row in rows]
+        rows = await self._fetch_all(
+            f"SELECT {_TOOL_CALL_COLUMNS} FROM tool_calls WHERE project_id = ? "
+            "ORDER BY created_at ASC",
+            (project_id,),
+        )
+        return [_decode_row(ToolCallRecord, _TOOL_CALL_COLUMNS, row) for row in rows]
 
     async def list_tool_observations(self, tool_call_id: str) -> list[ToolObservationRecord]:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_TOOL_OBSERVATION_COLUMNS} FROM tool_observations "
-                "WHERE tool_call_id = ? ORDER BY created_at ASC",
-                (tool_call_id,),
-            )
-            rows = await cursor.fetchall()
-            await cursor.close()
-        return [_row_to_tool_observation(row) for row in rows]
+        rows = await self._fetch_all(
+            f"SELECT {_TOOL_OBSERVATION_COLUMNS} FROM tool_observations "
+            "WHERE tool_call_id = ? ORDER BY created_at ASC",
+            (tool_call_id,),
+        )
+        return [_decode_row(ToolObservationRecord, _TOOL_OBSERVATION_COLUMNS, row) for row in rows]
 
     async def list_tool_observations_for_calls(
         self,
@@ -998,360 +614,244 @@ class ResearchSQLiteRepository(ResearchRepository):
         if not tool_call_ids:
             return {}
         placeholders = ", ".join("?" for _ in tool_call_ids)
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_TOOL_OBSERVATION_COLUMNS} FROM tool_observations "
-                f"WHERE tool_call_id IN ({placeholders}) "
-                "ORDER BY tool_call_id ASC, created_at ASC",
-                tuple(tool_call_ids),
-            )
-            rows = await cursor.fetchall()
-            await cursor.close()
-        grouped: dict[str, list[ToolObservationRecord]] = {call_id: [] for call_id in tool_call_ids}
+        rows = await self._fetch_all(
+            f"SELECT {_TOOL_OBSERVATION_COLUMNS} FROM tool_observations "
+            f"WHERE tool_call_id IN ({placeholders}) "
+            "ORDER BY tool_call_id ASC, created_at ASC",
+            tuple(tool_call_ids),
+        )
+        grouped: dict[str, list[ToolObservationRecord]] = {cid: [] for cid in tool_call_ids}
         for row in rows:
-            observation = _row_to_tool_observation(row)
+            observation = _decode_row(ToolObservationRecord, _TOOL_OBSERVATION_COLUMNS, row)
             grouped.setdefault(observation.tool_call_id, []).append(observation)
         return grouped
 
     # --- claims ----------------------------------------------------------
 
     async def create_claim(self, claim: Claim) -> None:
-        async with self._lock:
-            await self._conn.execute(
-                f"INSERT INTO claims({_CLAIM_COLUMNS}) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                _claim_to_row(claim),
-            )
-            await self._conn.commit()
+        await self._insert("claims", _CLAIM_COLUMNS, claim)
 
     async def upsert_claim(self, claim: Claim) -> None:
-        async with self._lock:
-            await self._conn.execute(
-                f"""
-                INSERT INTO claims({_CLAIM_COLUMNS})
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    project_id = excluded.project_id,
-                    text = excluded.text,
-                    claim_type = excluded.claim_type,
-                    paper_id = excluded.paper_id,
-                    section = excluded.section,
-                    confidence = excluded.confidence,
-                    evidence_ids_json = excluded.evidence_ids_json,
-                    status = excluded.status
-                """,
-                _claim_to_row(claim),
-            )
-            await self._conn.commit()
+        await self._upsert(
+            "claims",
+            _CLAIM_COLUMNS,
+            claim,
+            mutable="project_id, text, claim_type, paper_id, section, confidence, "
+            "evidence_ids_json, status",
+        )
 
     async def get_claim(self, claim_id: str) -> Claim | None:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_CLAIM_COLUMNS} FROM claims WHERE id = ?",
-                (claim_id,),
-            )
-            row = await cursor.fetchone()
-            await cursor.close()
-        return _row_to_claim(row) if row else None
+        row = await self._fetch_one(
+            f"SELECT {_CLAIM_COLUMNS} FROM claims WHERE id = ?", (claim_id,)
+        )
+        return _decode_row(Claim, _CLAIM_COLUMNS, row) if row else None
 
     async def list_project_claims(self, project_id: str, *, limit: int = 500) -> list[Claim]:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_CLAIM_COLUMNS} FROM claims WHERE project_id = ? "
-                "ORDER BY created_at ASC LIMIT ?",
-                (project_id, limit),
-            )
-            rows = await cursor.fetchall()
-            await cursor.close()
-        return [_row_to_claim(row) for row in rows]
+        rows = await self._fetch_all(
+            f"SELECT {_CLAIM_COLUMNS} FROM claims WHERE project_id = ? "
+            "ORDER BY created_at ASC LIMIT ?",
+            (project_id, limit),
+        )
+        return [_decode_row(Claim, _CLAIM_COLUMNS, row) for row in rows]
 
     async def list_paper_claims(self, paper_id: str) -> list[Claim]:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_CLAIM_COLUMNS} FROM claims WHERE paper_id = ? "
-                "ORDER BY created_at ASC",
-                (paper_id,),
-            )
-            rows = await cursor.fetchall()
-            await cursor.close()
-        return [_row_to_claim(row) for row in rows]
+        rows = await self._fetch_all(
+            f"SELECT {_CLAIM_COLUMNS} FROM claims WHERE paper_id = ? ORDER BY created_at ASC",
+            (paper_id,),
+        )
+        return [_decode_row(Claim, _CLAIM_COLUMNS, row) for row in rows]
 
     # --- evidence --------------------------------------------------------
 
     async def create_evidence(self, evidence: Evidence) -> None:
-        async with self._lock:
-            await self._conn.execute(
-                f"INSERT INTO evidence({_EVIDENCE_COLUMNS}) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                _evidence_to_row(evidence),
-            )
-            await self._conn.commit()
+        await self._insert("evidence", _EVIDENCE_COLUMNS, evidence)
 
     async def get_evidence(self, evidence_id: str) -> Evidence | None:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_EVIDENCE_COLUMNS} FROM evidence WHERE id = ?",
-                (evidence_id,),
-            )
-            row = await cursor.fetchone()
-            await cursor.close()
-        return _row_to_evidence(row) if row else None
+        row = await self._fetch_one(
+            f"SELECT {_EVIDENCE_COLUMNS} FROM evidence WHERE id = ?", (evidence_id,)
+        )
+        return _decode_row(Evidence, _EVIDENCE_COLUMNS, row) if row else None
 
     async def list_claim_evidence(self, claim_id: str) -> list[Evidence]:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_EVIDENCE_COLUMNS} FROM evidence WHERE claim_id = ? "
-                "ORDER BY created_at ASC",
-                (claim_id,),
-            )
-            rows = await cursor.fetchall()
-            await cursor.close()
-        return [_row_to_evidence(row) for row in rows]
+        rows = await self._fetch_all(
+            f"SELECT {_EVIDENCE_COLUMNS} FROM evidence WHERE claim_id = ? "
+            "ORDER BY created_at ASC",
+            (claim_id,),
+        )
+        return [_decode_row(Evidence, _EVIDENCE_COLUMNS, row) for row in rows]
 
     async def list_project_evidence(self, project_id: str) -> list[Evidence]:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_prefixed(_EVIDENCE_COLUMNS, 'evidence')} FROM evidence "
-                "JOIN claims ON evidence.claim_id = claims.id "
-                "WHERE claims.project_id = ? "
-                "ORDER BY evidence.created_at ASC",
-                (project_id,),
-            )
-            rows = await cursor.fetchall()
-            await cursor.close()
-        return [_row_to_evidence(row) for row in rows]
+        rows = await self._fetch_all(
+            f"SELECT {_prefixed(_EVIDENCE_COLUMNS, 'evidence')} FROM evidence "
+            "JOIN claims ON evidence.claim_id = claims.id "
+            "WHERE claims.project_id = ? ORDER BY evidence.created_at ASC",
+            (project_id,),
+        )
+        return [_decode_row(Evidence, _EVIDENCE_COLUMNS, row) for row in rows]
 
     # --- review checkpoints ---------------------------------------------
 
     async def create_checkpoint(self, checkpoint: ReviewCheckpoint) -> None:
-        async with self._lock:
-            await self._conn.execute(
-                f"INSERT INTO review_checkpoints({_CHECKPOINT_COLUMNS}) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                _checkpoint_to_row(checkpoint),
-            )
-            await self._conn.commit()
+        await self._insert("review_checkpoints", _CHECKPOINT_COLUMNS, checkpoint)
 
     async def upsert_checkpoint(self, checkpoint: ReviewCheckpoint) -> None:
-        async with self._lock:
-            await self._conn.execute(
-                f"""
-                INSERT INTO review_checkpoints({_CHECKPOINT_COLUMNS})
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    task_id = excluded.task_id,
-                    project_id = excluded.project_id,
-                    checkpoint_type = excluded.checkpoint_type,
-                    title = excluded.title,
-                    content_json = excluded.content_json,
-                    status = excluded.status,
-                    decision = excluded.decision,
-                    comment = excluded.comment,
-                    decided_at = excluded.decided_at
-                """,
-                _checkpoint_to_row(checkpoint),
-            )
-            await self._conn.commit()
+        await self._upsert(
+            "review_checkpoints",
+            _CHECKPOINT_COLUMNS,
+            checkpoint,
+            mutable="task_id, project_id, checkpoint_type, title, content_json, "
+            "status, decision, comment, decided_at",
+        )
 
     async def get_checkpoint(self, checkpoint_id: str) -> ReviewCheckpoint | None:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_CHECKPOINT_COLUMNS} FROM review_checkpoints WHERE id = ?",
-                (checkpoint_id,),
-            )
-            row = await cursor.fetchone()
-            await cursor.close()
-        return _row_to_checkpoint(row) if row else None
+        row = await self._fetch_one(
+            f"SELECT {_CHECKPOINT_COLUMNS} FROM review_checkpoints WHERE id = ?",
+            (checkpoint_id,),
+        )
+        return _decode_row(ReviewCheckpoint, _CHECKPOINT_COLUMNS, row) if row else None
 
     async def list_project_checkpoints(self, project_id: str) -> list[ReviewCheckpoint]:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_CHECKPOINT_COLUMNS} FROM review_checkpoints WHERE project_id = ? "
-                "ORDER BY created_at ASC",
-                (project_id,),
-            )
-            rows = await cursor.fetchall()
-            await cursor.close()
-        return [_row_to_checkpoint(row) for row in rows]
+        rows = await self._fetch_all(
+            f"SELECT {_CHECKPOINT_COLUMNS} FROM review_checkpoints WHERE project_id = ? "
+            "ORDER BY created_at ASC",
+            (project_id,),
+        )
+        return [_decode_row(ReviewCheckpoint, _CHECKPOINT_COLUMNS, row) for row in rows]
 
     # --- research events -------------------------------------------------
 
     async def record_research_event(self, event: ResearchEvent) -> None:
-        payload = event.model_dump(mode="json")
         row = (
             _id("evt"),
             event.task_id,
             event.project_id,
             event.seq,
             event.type,
-            json.dumps(payload, ensure_ascii=False, default=str),
+            json.dumps(event.model_dump(mode="json"), ensure_ascii=False, default=str),
             _datetime_to_iso_utc(event.timestamp),
             _datetime_to_iso_utc(utcnow()),
         )
         async with self._lock:
             await self._conn.execute(
                 f"INSERT INTO research_events({_RESEARCH_EVENT_COLUMNS}) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
+                f"VALUES({_placeholders(_RESEARCH_EVENT_COLUMNS)})",
                 row,
             )
             await self._conn.commit()
 
     async def list_research_events(self, task_id: str) -> list[dict]:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                "SELECT payload_json FROM research_events WHERE task_id = ? "
-                "ORDER BY seq ASC, created_at ASC",
-                (task_id,),
-            )
-            rows = await cursor.fetchall()
-            await cursor.close()
+        rows = await self._fetch_all(
+            "SELECT payload_json FROM research_events WHERE task_id = ? "
+            "ORDER BY seq ASC, created_at ASC",
+            (task_id,),
+        )
         return [json.loads(row[0]) for row in rows]
 
     # --- method taxonomies ----------------------------------------------
 
     async def create_taxonomy(self, taxonomy: MethodTaxonomy) -> None:
-        async with self._lock:
-            await self._conn.execute(
-                f"INSERT INTO method_taxonomies({_TAXONOMY_COLUMNS}) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?)",
-                _taxonomy_to_row(taxonomy),
-            )
-            await self._conn.commit()
+        await self._insert("method_taxonomies", _TAXONOMY_COLUMNS, taxonomy)
 
     async def get_taxonomy(self, taxonomy_id: str) -> MethodTaxonomy | None:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_TAXONOMY_COLUMNS} FROM method_taxonomies WHERE id = ?",
-                (taxonomy_id,),
-            )
-            row = await cursor.fetchone()
-            await cursor.close()
-        return _row_to_taxonomy(row) if row else None
+        row = await self._fetch_one(
+            f"SELECT {_TAXONOMY_COLUMNS} FROM method_taxonomies WHERE id = ?",
+            (taxonomy_id,),
+        )
+        return _decode_row(MethodTaxonomy, _TAXONOMY_COLUMNS, row) if row else None
 
     async def latest_project_taxonomy(self, project_id: str) -> MethodTaxonomy | None:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_TAXONOMY_COLUMNS} FROM method_taxonomies WHERE project_id = ? "
-                "ORDER BY created_at DESC LIMIT 1",
-                (project_id,),
-            )
-            row = await cursor.fetchone()
-            await cursor.close()
-        return _row_to_taxonomy(row) if row else None
+        row = await self._fetch_one(
+            f"SELECT {_TAXONOMY_COLUMNS} FROM method_taxonomies WHERE project_id = ? "
+            "ORDER BY created_at DESC LIMIT 1",
+            (project_id,),
+        )
+        return _decode_row(MethodTaxonomy, _TAXONOMY_COLUMNS, row) if row else None
 
     # --- baseline candidates --------------------------------------------
 
     async def create_baseline(self, baseline: BaselineCandidate) -> None:
-        async with self._lock:
-            await self._conn.execute(
-                f"INSERT INTO baseline_candidates({_BASELINE_COLUMNS}) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                _baseline_to_row(baseline),
-            )
-            await self._conn.commit()
+        await self._insert("baseline_candidates", _BASELINE_COLUMNS, baseline)
 
     async def upsert_baseline(self, baseline: BaselineCandidate) -> None:
-        async with self._lock:
-            await self._conn.execute(
-                f"""
-                INSERT INTO baseline_candidates({_BASELINE_COLUMNS})
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    project_id = excluded.project_id,
-                    name = excluded.name,
-                    method_summary = excluded.method_summary,
-                    paper_id = excluded.paper_id,
-                    code_url = excluded.code_url,
-                    dataset = excluded.dataset,
-                    metric = excluded.metric,
-                    reported_score = excluded.reported_score,
-                    reproduction_difficulty = excluded.reproduction_difficulty,
-                    hardware_requirement = excluded.hardware_requirement,
-                    expected_runtime = excluded.expected_runtime,
-                    license = excluded.license,
-                    rank_score = excluded.rank_score,
-                    selection_reason = excluded.selection_reason,
-                    status = excluded.status
-                """,
-                _baseline_to_row(baseline),
-            )
-            await self._conn.commit()
+        await self._upsert(
+            "baseline_candidates",
+            _BASELINE_COLUMNS,
+            baseline,
+            mutable="project_id, name, method_summary, paper_id, code_url, dataset, "
+            "metric, reported_score, reproduction_difficulty, hardware_requirement, "
+            "expected_runtime, license, rank_score, selection_reason, status",
+        )
 
     async def get_baseline(self, baseline_id: str) -> BaselineCandidate | None:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_BASELINE_COLUMNS} FROM baseline_candidates WHERE id = ?",
-                (baseline_id,),
-            )
-            row = await cursor.fetchone()
-            await cursor.close()
-        return _row_to_baseline(row) if row else None
+        row = await self._fetch_one(
+            f"SELECT {_BASELINE_COLUMNS} FROM baseline_candidates WHERE id = ?",
+            (baseline_id,),
+        )
+        return _decode_row(BaselineCandidate, _BASELINE_COLUMNS, row) if row else None
 
     async def list_project_baselines(self, project_id: str) -> list[BaselineCandidate]:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_BASELINE_COLUMNS} FROM baseline_candidates WHERE project_id = ? "
-                "ORDER BY created_at ASC",
-                (project_id,),
-            )
-            rows = await cursor.fetchall()
-            await cursor.close()
-        return [_row_to_baseline(row) for row in rows]
+        rows = await self._fetch_all(
+            f"SELECT {_BASELINE_COLUMNS} FROM baseline_candidates WHERE project_id = ? "
+            "ORDER BY created_at ASC",
+            (project_id,),
+        )
+        return [_decode_row(BaselineCandidate, _BASELINE_COLUMNS, row) for row in rows]
 
     # --- research ideas -------------------------------------------------
 
     async def create_idea(self, idea: ResearchIdea) -> None:
-        async with self._lock:
-            await self._conn.execute(
-                f"INSERT INTO research_ideas({_IDEA_COLUMNS}) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                _idea_to_row(idea),
-            )
-            await self._conn.commit()
+        await self._insert("research_ideas", _IDEA_COLUMNS, idea)
 
     async def upsert_idea(self, idea: ResearchIdea) -> None:
-        async with self._lock:
-            await self._conn.execute(
-                f"""
-                INSERT INTO research_ideas({_IDEA_COLUMNS})
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    project_id = excluded.project_id,
-                    title = excluded.title,
-                    motivation = excluded.motivation,
-                    core_hypothesis = excluded.core_hypothesis,
-                    method_sketch = excluded.method_sketch,
-                    expected_advantage = excluded.expected_advantage,
-                    required_baselines_json = excluded.required_baselines_json,
-                    required_datasets_json = excluded.required_datasets_json,
-                    evaluation_plan = excluded.evaluation_plan,
-                    novelty_score = excluded.novelty_score,
-                    feasibility_score = excluded.feasibility_score,
-                    risk_score = excluded.risk_score,
-                    overall_score = excluded.overall_score,
-                    evidence_ids_json = excluded.evidence_ids_json,
-                    status = excluded.status
-                """,
-                _idea_to_row(idea),
-            )
-            await self._conn.commit()
+        await self._upsert(
+            "research_ideas",
+            _IDEA_COLUMNS,
+            idea,
+            mutable="project_id, title, motivation, core_hypothesis, method_sketch, "
+            "expected_advantage, required_baselines_json, required_datasets_json, "
+            "evaluation_plan, novelty_score, feasibility_score, risk_score, "
+            "overall_score, evidence_ids_json, status",
+        )
 
     async def get_idea(self, idea_id: str) -> ResearchIdea | None:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_IDEA_COLUMNS} FROM research_ideas WHERE id = ?",
-                (idea_id,),
-            )
-            row = await cursor.fetchone()
-            await cursor.close()
-        return _row_to_idea(row) if row else None
+        row = await self._fetch_one(
+            f"SELECT {_IDEA_COLUMNS} FROM research_ideas WHERE id = ?", (idea_id,)
+        )
+        return _decode_row(ResearchIdea, _IDEA_COLUMNS, row) if row else None
 
     async def list_project_ideas(self, project_id: str) -> list[ResearchIdea]:
-        async with self._lock:
-            cursor = await self._conn.execute(
-                f"SELECT {_IDEA_COLUMNS} FROM research_ideas WHERE project_id = ? "
-                "ORDER BY created_at ASC",
-                (project_id,),
-            )
-            rows = await cursor.fetchall()
-            await cursor.close()
-        return [_row_to_idea(row) for row in rows]
+        rows = await self._fetch_all(
+            f"SELECT {_IDEA_COLUMNS} FROM research_ideas WHERE project_id = ? "
+            "ORDER BY created_at ASC",
+            (project_id,),
+        )
+        return [_decode_row(ResearchIdea, _IDEA_COLUMNS, row) for row in rows]
+
+    # --- benchmarks -----------------------------------------------------
+
+    async def create_benchmark(self, benchmark: Benchmark) -> None:
+        await self._insert("benchmarks", _BENCHMARK_COLUMNS, benchmark)
+
+    async def upsert_benchmark(self, benchmark: Benchmark) -> None:
+        await self._upsert(
+            "benchmarks",
+            _BENCHMARK_COLUMNS,
+            benchmark,
+            mutable="project_id, name, dataset, metrics_json, task, "
+            "source_paper_ids_json, adoption_count, status, selection_reason",
+        )
+
+    async def get_benchmark(self, benchmark_id: str) -> Benchmark | None:
+        row = await self._fetch_one(
+            f"SELECT {_BENCHMARK_COLUMNS} FROM benchmarks WHERE id = ?", (benchmark_id,)
+        )
+        return _decode_row(Benchmark, _BENCHMARK_COLUMNS, row) if row else None
+
+    async def list_project_benchmarks(self, project_id: str) -> list[Benchmark]:
+        """Return a project's benchmarks ranked by adoption (most-used first)."""
+        rows = await self._fetch_all(
+            f"SELECT {_BENCHMARK_COLUMNS} FROM benchmarks WHERE project_id = ? "
+            "ORDER BY adoption_count DESC, created_at ASC",
+            (project_id,),
+        )
+        return [_decode_row(Benchmark, _BENCHMARK_COLUMNS, row) for row in rows]

@@ -7,9 +7,9 @@
 
 | 区域 | 文件数 | 行数 | 说明 |
 |---|---:|---:|---|
-| `backend_py` (`src/athena/`) | 113 | 12125 | 可运行后端源码(FastAPI + 多 Agent runtime + Research OS 层 + agent runtime)。 |
+| `backend_py` (`src/athena/`) | 116 | 11907 | 可运行后端源码(FastAPI + 多 Agent runtime + Research OS 层 + agent runtime)。 |
 | `frontend_src` (`web/src/`) | 55 | 12956 | Vue 3 + Vite + Pinia + Element Plus 前端源码(`.ts` / `.vue` / `.css`)。 |
-| `tests` (`tests/`) | 24 | 4445 | 后端 pytest 测试(含 `tests/research/` Research OS 套件)。 |
+| `tests` (`tests/`) | 26 | 4647 | 后端 pytest 测试(含 `tests/research/` Research OS 套件)。 |
 | `tutorial_code` | 150 | 7160 | 从教材提取的章节代码归档(练习、反模式、片段、完整示例),不参与生产 runtime。 |
 
 数字用 `find … | wc -l` 与 `cat … | wc -l` 直接统计,随代码变动需重新核对。
@@ -22,7 +22,7 @@ python -m pytest -q
 (cd web && npm run build)
 ```
 
-结果:`250 passed`;后端编译通过;前端 `vite build` 通过。
+结果:`258 passed`;后端编译通过;前端 `vite build` 通过。
 
 ## 口径说明
 
