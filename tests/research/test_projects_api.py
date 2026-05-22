@@ -676,3 +676,89 @@ async def test_review_api_wakes_a_session_blocked_on_plan_review(
         assert result.started is True
         assert result.plan_review.decision == "approved"
         assert result.loop_result is not None
+
+
+@pytest.mark.asyncio
+async def test_phase5_taxonomy_baseline_and_idea_endpoints(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    _configure_env(monkeypatch, tmp_path)
+
+    from athena.api.main import create_app
+
+    app = create_app()
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            project = (
+                await client.post(
+                    "/v1/projects",
+                    json={"title": "RAG", "research_question": "Which baseline to reproduce?"},
+                )
+            ).json()
+            paper = (
+                await client.post(
+                    f"/v1/projects/{project['id']}/papers",
+                    json={"title": "RAG", "code_url": "https://github.com/example/rag"},
+                )
+            ).json()
+            await client.post(
+                f"/v1/projects/{project['id']}/papers/{paper['id']}/notes",
+                json={"method": "retriever + generator", "datasets": ["NQ"], "metrics": ["EM"]},
+            )
+
+            built = await client.post(f"/v1/projects/{project['id']}/taxonomy/build", json={})
+            assert built.status_code == 200 and built.json()["ok"] is True
+            taxonomy = await client.get(f"/v1/projects/{project['id']}/taxonomy")
+            assert taxonomy.status_code == 200
+            assert taxonomy.json()["nodes"]
+
+            extracted = await client.post(f"/v1/projects/{project['id']}/baselines/extract", json={})
+            assert extracted.json()["structured_output"]["created_count"] == 1
+            ranked = await client.post(
+                f"/v1/projects/{project['id']}/baselines/rank", json={"goal": "RAG"}
+            )
+            assert ranked.json()["ok"] is True
+            baselines = await client.get(f"/v1/projects/{project['id']}/baselines")
+            assert baselines.json()[0]["rank_score"] is not None
+
+            idea = await client.post(
+                f"/v1/projects/{project['id']}/ideas",
+                json={
+                    "title": "adaptive retrieval depth",
+                    "motivation": "latency",
+                    "core_hypothesis": "depth can be learned",
+                    "method_sketch": "a controller predicts depth",
+                    "novelty_score": 0.8,
+                    "risk_score": 0.3,
+                },
+            )
+            assert idea.status_code == 200
+            idea_rank = await client.post(f"/v1/projects/{project['id']}/ideas/rank", json={})
+            assert idea_rank.json()["ok"] is True
+            ideas = await client.get(f"/v1/projects/{project['id']}/ideas")
+            assert ideas.json()[0]["overall_score"] is not None
+
+
+@pytest.mark.asyncio
+async def test_taxonomy_endpoint_404_before_any_build(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    _configure_env(monkeypatch, tmp_path)
+
+    from athena.api.main import create_app
+
+    app = create_app()
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            project = (
+                await client.post(
+                    "/v1/projects",
+                    json={"title": "RAG", "research_question": "Untouched project?"},
+                )
+            ).json()
+            response = await client.get(f"/v1/projects/{project['id']}/taxonomy")
+    assert response.status_code == 404

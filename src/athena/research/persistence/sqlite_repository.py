@@ -16,14 +16,17 @@ from uuid import uuid4
 import aiosqlite
 
 from athena.research.domain import (
+    BaselineCandidate,
     CheckpointStatus,
     CheckpointType,
     Claim,
     Evidence,
+    MethodTaxonomy,
     Paper,
     PaperNote,
     PaperScreeningStatus,
     ProjectStatus,
+    ResearchIdea,
     ResearchProject,
     ReviewCheckpoint,
     ReviewDecision,
@@ -330,6 +333,20 @@ _CHECKPOINT_COLUMNS = (
 _RESEARCH_EVENT_COLUMNS = (
     "id, task_id, project_id, seq, type, payload_json, timestamp, created_at"
 )
+_TAXONOMY_COLUMNS = (
+    "id, project_id, nodes_json, edges_json, summary, open_problems_json, created_at"
+)
+_BASELINE_COLUMNS = (
+    "id, project_id, name, method_summary, paper_id, code_url, dataset, metric, "
+    "reported_score, reproduction_difficulty, hardware_requirement, expected_runtime, "
+    "license, rank_score, selection_reason, status, created_at"
+)
+_IDEA_COLUMNS = (
+    "id, project_id, title, motivation, core_hypothesis, method_sketch, "
+    "expected_advantage, required_baselines_json, required_datasets_json, "
+    "evaluation_plan, novelty_score, feasibility_score, risk_score, overall_score, "
+    "evidence_ids_json, status, created_at"
+)
 
 
 def _id(prefix: str) -> str:
@@ -620,6 +637,118 @@ def _row_to_checkpoint(row: tuple) -> ReviewCheckpoint:
         comment=row[8],
         created_at=datetime.fromisoformat(row[9]),
         decided_at=datetime.fromisoformat(row[10]) if row[10] else None,
+    )
+
+
+def _taxonomy_to_row(taxonomy: MethodTaxonomy) -> tuple[object, ...]:
+    return (
+        taxonomy.id,
+        taxonomy.project_id,
+        json.dumps(taxonomy.nodes, ensure_ascii=False, default=str),
+        json.dumps(taxonomy.edges, ensure_ascii=False, default=str),
+        taxonomy.summary,
+        json.dumps(taxonomy.open_problems, ensure_ascii=False),
+        _datetime_to_iso_utc(taxonomy.created_at),
+    )
+
+
+def _row_to_taxonomy(row: tuple) -> MethodTaxonomy:
+    return MethodTaxonomy(
+        id=row[0],
+        project_id=row[1],
+        nodes=json.loads(row[2]),
+        edges=json.loads(row[3]),
+        summary=row[4],
+        open_problems=json.loads(row[5]),
+        created_at=datetime.fromisoformat(row[6]),
+    )
+
+
+def _baseline_to_row(baseline: BaselineCandidate) -> tuple[object, ...]:
+    return (
+        baseline.id,
+        baseline.project_id,
+        baseline.name,
+        baseline.method_summary,
+        baseline.paper_id,
+        baseline.code_url,
+        baseline.dataset,
+        baseline.metric,
+        baseline.reported_score,
+        baseline.reproduction_difficulty,
+        baseline.hardware_requirement,
+        baseline.expected_runtime,
+        baseline.license,
+        baseline.rank_score,
+        baseline.selection_reason,
+        baseline.status,
+        _datetime_to_iso_utc(baseline.created_at),
+    )
+
+
+def _row_to_baseline(row: tuple) -> BaselineCandidate:
+    return BaselineCandidate(
+        id=row[0],
+        project_id=row[1],
+        name=row[2],
+        method_summary=row[3],
+        paper_id=row[4],
+        code_url=row[5],
+        dataset=row[6],
+        metric=row[7],
+        reported_score=row[8],
+        reproduction_difficulty=row[9],
+        hardware_requirement=row[10],
+        expected_runtime=row[11],
+        license=row[12],
+        rank_score=row[13],
+        selection_reason=row[14],
+        status=row[15],
+        created_at=datetime.fromisoformat(row[16]),
+    )
+
+
+def _idea_to_row(idea: ResearchIdea) -> tuple[object, ...]:
+    return (
+        idea.id,
+        idea.project_id,
+        idea.title,
+        idea.motivation,
+        idea.core_hypothesis,
+        idea.method_sketch,
+        idea.expected_advantage,
+        json.dumps(idea.required_baselines, ensure_ascii=False),
+        json.dumps(idea.required_datasets, ensure_ascii=False),
+        idea.evaluation_plan,
+        idea.novelty_score,
+        idea.feasibility_score,
+        idea.risk_score,
+        idea.overall_score,
+        json.dumps(idea.evidence_ids, ensure_ascii=False),
+        idea.status,
+        _datetime_to_iso_utc(idea.created_at),
+    )
+
+
+def _row_to_idea(row: tuple) -> ResearchIdea:
+    return ResearchIdea(
+        id=row[0],
+        project_id=row[1],
+        title=row[2],
+        motivation=row[3],
+        core_hypothesis=row[4],
+        method_sketch=row[5],
+        expected_advantage=row[6],
+        required_baselines=json.loads(row[7]),
+        required_datasets=json.loads(row[8]),
+        evaluation_plan=row[9],
+        novelty_score=row[10],
+        feasibility_score=row[11],
+        risk_score=row[12],
+        overall_score=row[13],
+        evidence_ids=json.loads(row[14]),
+        status=row[15],
+        created_at=datetime.fromisoformat(row[16]),
     )
 
 
@@ -1076,3 +1205,153 @@ class ResearchSQLiteRepository(ResearchRepository):
             rows = await cursor.fetchall()
             await cursor.close()
         return [json.loads(row[0]) for row in rows]
+
+    # --- method taxonomies ----------------------------------------------
+
+    async def create_taxonomy(self, taxonomy: MethodTaxonomy) -> None:
+        async with self._lock:
+            await self._conn.execute(
+                f"INSERT INTO method_taxonomies({_TAXONOMY_COLUMNS}) "
+                "VALUES(?, ?, ?, ?, ?, ?, ?)",
+                _taxonomy_to_row(taxonomy),
+            )
+            await self._conn.commit()
+
+    async def get_taxonomy(self, taxonomy_id: str) -> MethodTaxonomy | None:
+        async with self._lock:
+            cursor = await self._conn.execute(
+                f"SELECT {_TAXONOMY_COLUMNS} FROM method_taxonomies WHERE id = ?",
+                (taxonomy_id,),
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+        return _row_to_taxonomy(row) if row else None
+
+    async def latest_project_taxonomy(self, project_id: str) -> MethodTaxonomy | None:
+        async with self._lock:
+            cursor = await self._conn.execute(
+                f"SELECT {_TAXONOMY_COLUMNS} FROM method_taxonomies WHERE project_id = ? "
+                "ORDER BY created_at DESC LIMIT 1",
+                (project_id,),
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+        return _row_to_taxonomy(row) if row else None
+
+    # --- baseline candidates --------------------------------------------
+
+    async def create_baseline(self, baseline: BaselineCandidate) -> None:
+        async with self._lock:
+            await self._conn.execute(
+                f"INSERT INTO baseline_candidates({_BASELINE_COLUMNS}) "
+                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                _baseline_to_row(baseline),
+            )
+            await self._conn.commit()
+
+    async def upsert_baseline(self, baseline: BaselineCandidate) -> None:
+        async with self._lock:
+            await self._conn.execute(
+                f"""
+                INSERT INTO baseline_candidates({_BASELINE_COLUMNS})
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    project_id = excluded.project_id,
+                    name = excluded.name,
+                    method_summary = excluded.method_summary,
+                    paper_id = excluded.paper_id,
+                    code_url = excluded.code_url,
+                    dataset = excluded.dataset,
+                    metric = excluded.metric,
+                    reported_score = excluded.reported_score,
+                    reproduction_difficulty = excluded.reproduction_difficulty,
+                    hardware_requirement = excluded.hardware_requirement,
+                    expected_runtime = excluded.expected_runtime,
+                    license = excluded.license,
+                    rank_score = excluded.rank_score,
+                    selection_reason = excluded.selection_reason,
+                    status = excluded.status
+                """,
+                _baseline_to_row(baseline),
+            )
+            await self._conn.commit()
+
+    async def get_baseline(self, baseline_id: str) -> BaselineCandidate | None:
+        async with self._lock:
+            cursor = await self._conn.execute(
+                f"SELECT {_BASELINE_COLUMNS} FROM baseline_candidates WHERE id = ?",
+                (baseline_id,),
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+        return _row_to_baseline(row) if row else None
+
+    async def list_project_baselines(self, project_id: str) -> list[BaselineCandidate]:
+        async with self._lock:
+            cursor = await self._conn.execute(
+                f"SELECT {_BASELINE_COLUMNS} FROM baseline_candidates WHERE project_id = ? "
+                "ORDER BY created_at ASC",
+                (project_id,),
+            )
+            rows = await cursor.fetchall()
+            await cursor.close()
+        return [_row_to_baseline(row) for row in rows]
+
+    # --- research ideas -------------------------------------------------
+
+    async def create_idea(self, idea: ResearchIdea) -> None:
+        async with self._lock:
+            await self._conn.execute(
+                f"INSERT INTO research_ideas({_IDEA_COLUMNS}) "
+                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                _idea_to_row(idea),
+            )
+            await self._conn.commit()
+
+    async def upsert_idea(self, idea: ResearchIdea) -> None:
+        async with self._lock:
+            await self._conn.execute(
+                f"""
+                INSERT INTO research_ideas({_IDEA_COLUMNS})
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    project_id = excluded.project_id,
+                    title = excluded.title,
+                    motivation = excluded.motivation,
+                    core_hypothesis = excluded.core_hypothesis,
+                    method_sketch = excluded.method_sketch,
+                    expected_advantage = excluded.expected_advantage,
+                    required_baselines_json = excluded.required_baselines_json,
+                    required_datasets_json = excluded.required_datasets_json,
+                    evaluation_plan = excluded.evaluation_plan,
+                    novelty_score = excluded.novelty_score,
+                    feasibility_score = excluded.feasibility_score,
+                    risk_score = excluded.risk_score,
+                    overall_score = excluded.overall_score,
+                    evidence_ids_json = excluded.evidence_ids_json,
+                    status = excluded.status
+                """,
+                _idea_to_row(idea),
+            )
+            await self._conn.commit()
+
+    async def get_idea(self, idea_id: str) -> ResearchIdea | None:
+        async with self._lock:
+            cursor = await self._conn.execute(
+                f"SELECT {_IDEA_COLUMNS} FROM research_ideas WHERE id = ?",
+                (idea_id,),
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+        return _row_to_idea(row) if row else None
+
+    async def list_project_ideas(self, project_id: str) -> list[ResearchIdea]:
+        async with self._lock:
+            cursor = await self._conn.execute(
+                f"SELECT {_IDEA_COLUMNS} FROM research_ideas WHERE project_id = ? "
+                "ORDER BY created_at ASC",
+                (project_id,),
+            )
+            rows = await cursor.fetchall()
+            await cursor.close()
+        return [_row_to_idea(row) for row in rows]

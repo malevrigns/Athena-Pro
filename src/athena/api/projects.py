@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import aiosqlite
 from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, Field, HttpUrl
@@ -9,11 +11,14 @@ from pydantic import BaseModel, Field, HttpUrl
 from athena.persistence import get_store
 from athena.research.artifacts import PaperMatrix, build_paper_matrix, paper_matrix_to_csv
 from athena.research.domain import (
+    BaselineCandidate,
     Claim,
     Evidence,
+    MethodTaxonomy,
     Paper,
     PaperNote,
     PaperScreeningStatus,
+    ResearchIdea,
     ResearchProject,
     ReviewCheckpoint,
     ReviewDecision,
@@ -28,14 +33,21 @@ from athena.research.services import execute_tool_with_trace
 from athena.research.services import get_project_tool_trace
 from athena.research.services import get_tool_trace
 from athena.research.services.evidence_audit import EvidenceAuditReport
-from athena.research.tools import ToolResult, ToolRouter, ToolTraceItem
+from athena.research.tools import ToolResult, ToolRouter, ToolSpec, ToolTraceItem
+from athena.research.tools.baseline_tools import build_baseline_extract_tool, build_baseline_rank_tool
 from athena.research.tools.citation_graph import build_citation_graph_tool
 from athena.research.tools.evidence_tools import build_claim_extract_tool
+from athena.research.tools.idea_tools import build_idea_rank_tool
 from athena.research.tools.paper_reader import build_paper_reader_tool
 from athena.research.tools.paper_search import build_paper_search_tool
-
+from athena.research.tools.taxonomy_tools import build_taxonomy_tool
 
 router = APIRouter(tags=["research-os"])
+
+ToolBuilder = Callable[[ResearchRepository], ToolSpec]
+
+
+# --- request bodies ------------------------------------------------------
 
 
 class CreateProjectRequest(BaseModel):
@@ -65,16 +77,6 @@ class CreatePaperRequest(BaseModel):
     relevance_score: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
-class PaperSearchRequest(BaseModel):
-    query: str = Field(min_length=1, max_length=500)
-    limit: int = Field(default=5, ge=1, le=20)
-    task_id: str | None = None
-
-
-class ExtractPaperNoteRequest(BaseModel):
-    task_id: str | None = None
-
-
 class CreatePaperNoteRequest(BaseModel):
     problem: str | None = Field(default=None, max_length=4000)
     method: str | None = Field(default=None, max_length=8000)
@@ -88,7 +90,37 @@ class CreatePaperNoteRequest(BaseModel):
     important_sections: list[str] = Field(default_factory=list)
 
 
-class ClaimExtractRequest(BaseModel):
+class CreateBaselineRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=300)
+    method_summary: str = Field(min_length=1, max_length=8000)
+    paper_id: str | None = None
+    code_url: HttpUrl | None = None
+    dataset: str | None = Field(default=None, max_length=300)
+    metric: str | None = Field(default=None, max_length=300)
+    reported_score: str | None = Field(default=None, max_length=300)
+    reproduction_difficulty: str | None = Field(default=None, max_length=120)
+    hardware_requirement: str | None = Field(default=None, max_length=300)
+    expected_runtime: str | None = Field(default=None, max_length=120)
+    license: str | None = Field(default=None, max_length=120)
+
+
+class CreateIdeaRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    motivation: str = Field(min_length=1, max_length=8000)
+    core_hypothesis: str = Field(min_length=1, max_length=8000)
+    method_sketch: str = Field(min_length=1, max_length=8000)
+    expected_advantage: str | None = Field(default=None, max_length=8000)
+    required_baselines: list[str] = Field(default_factory=list)
+    required_datasets: list[str] = Field(default_factory=list)
+    evaluation_plan: str | None = Field(default=None, max_length=8000)
+    novelty_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    feasibility_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    risk_score: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class PaperSearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=500)
+    limit: int = Field(default=5, ge=1, le=20)
     task_id: str | None = None
 
 
@@ -98,11 +130,25 @@ class CitationGraphRequest(BaseModel):
     task_id: str | None = None
 
 
+class BaselineRankRequest(BaseModel):
+    goal: str = Field(default="", max_length=2000)
+    task_id: str | None = None
+
+
+class TaskRefRequest(BaseModel):
+    """Body for a trace-recorded action that takes no input beyond the project."""
+
+    task_id: str | None = None
+
+
 class ReviewDecisionRequest(BaseModel):
     comment: str | None = Field(default=None, max_length=4000)
 
 
-async def _research_repo():
+# --- shared helpers ------------------------------------------------------
+
+
+async def _research_repo() -> ResearchRepository:
     return await get_store().research_repository()
 
 
@@ -120,19 +166,44 @@ async def _get_paper_or_404(repo: ResearchRepository, project_id: str, paper_id:
     return paper
 
 
+async def _run_project_tool(
+    project_id: str,
+    build_tool: ToolBuilder,
+    arguments: dict | None = None,
+    *,
+    task_id: str | None = None,
+    paper_id: str | None = None,
+) -> ToolResult:
+    """Validate the project (and paper, when given), then run one tool with trace.
+
+    Every Research OS tool endpoint is the same shape — resolve the repo, 404
+    if the scope is missing, wrap the tool in a router, execute with trace —
+    so that shape lives here once instead of in each endpoint body.
+    """
+    repo = await _research_repo()
+    if paper_id is None:
+        await _get_project_or_404(repo, project_id)
+    else:
+        await _get_paper_or_404(repo, project_id, paper_id)
+    tool = build_tool(repo)
+    return await execute_tool_with_trace(
+        repo,
+        ToolRouter([tool]),
+        task_id=task_id or project_id,
+        project_id=project_id,
+        tool_name=tool.name,
+        arguments={"project_id": project_id, **(arguments or {})},
+    )
+
+
+# --- projects ------------------------------------------------------------
+
+
 @router.post("/v1/projects", response_model=ResearchProject)
 async def create_project(body: CreateProjectRequest):
     repo = await _research_repo()
     try:
-        return await create_research_project(
-            repo,
-            title=body.title,
-            research_question=body.research_question,
-            field=body.field,
-            constraints=body.constraints,
-            target_venue=body.target_venue,
-            owner=body.owner,
-        )
+        return await create_research_project(repo, **body.model_dump())
     except aiosqlite.IntegrityError as exc:
         raise HTTPException(409, "project already exists") from exc
 
@@ -149,30 +220,16 @@ async def get_project(project_id: str):
     return await _get_project_or_404(repo, project_id)
 
 
+# --- papers --------------------------------------------------------------
+
+
 @router.post("/v1/projects/{project_id}/papers", response_model=Paper)
 async def create_paper(project_id: str, body: CreatePaperRequest):
     repo = await _research_repo()
     await _get_project_or_404(repo, project_id)
     try:
-        return await create_research_paper(
-            repo,
-            project_id=project_id,
-            title=body.title,
-            authors=body.authors,
-            year=body.year,
-            venue=body.venue,
-            abstract=body.abstract,
-            url=str(body.url) if body.url else None,
-            pdf_url=str(body.pdf_url) if body.pdf_url else None,
-            arxiv_id=body.arxiv_id,
-            doi=body.doi,
-            semantic_scholar_id=body.semantic_scholar_id,
-            citation_count=body.citation_count,
-            code_url=str(body.code_url) if body.code_url else None,
-            dataset_mentions=body.dataset_mentions,
-            screening_status=body.screening_status,
-            relevance_score=body.relevance_score,
-        )
+        # mode="json" so HttpUrl fields arrive as plain strings.
+        return await create_research_paper(repo, project_id=project_id, **body.model_dump(mode="json"))
     except aiosqlite.IntegrityError as exc:
         raise HTTPException(409, "paper already exists") from exc
 
@@ -185,11 +242,7 @@ async def list_papers(
 ):
     repo = await _research_repo()
     await _get_project_or_404(repo, project_id)
-    return await repo.list_project_papers(
-        project_id,
-        limit=limit,
-        screening_status=screening_status,
-    )
+    return await repo.list_project_papers(project_id, limit=limit, screening_status=screening_status)
 
 
 @router.get("/v1/projects/{project_id}/papers/{paper_id}", response_model=Paper)
@@ -203,20 +256,7 @@ async def create_paper_note(project_id: str, paper_id: str, body: CreatePaperNot
     repo = await _research_repo()
     await _get_paper_or_404(repo, project_id, paper_id)
     try:
-        return await create_research_paper_note(
-            repo,
-            paper_id=paper_id,
-            problem=body.problem,
-            method=body.method,
-            training_setup=body.training_setup,
-            datasets=body.datasets,
-            metrics=body.metrics,
-            baselines=body.baselines,
-            main_results=body.main_results,
-            limitations=body.limitations,
-            reproducibility_notes=body.reproducibility_notes,
-            important_sections=body.important_sections,
-        )
+        return await create_research_paper_note(repo, paper_id=paper_id, **body.model_dump())
     except aiosqlite.IntegrityError as exc:
         raise HTTPException(409, "paper note already exists") from exc
 
@@ -229,50 +269,31 @@ async def list_paper_notes(project_id: str, paper_id: str):
 
 
 @router.post("/v1/projects/{project_id}/papers/{paper_id}/note-extract", response_model=ToolResult)
-async def extract_paper_note(project_id: str, paper_id: str, body: ExtractPaperNoteRequest):
-    repo = await _research_repo()
-    await _get_paper_or_404(repo, project_id, paper_id)
-    router = ToolRouter([build_paper_reader_tool(repo)])
-    return await execute_tool_with_trace(
-        repo,
-        router,
-        task_id=body.task_id or project_id,
-        project_id=project_id,
-        tool_name="paper_reader",
-        arguments={"project_id": project_id, "paper_id": paper_id},
+async def extract_paper_note(project_id: str, paper_id: str, body: TaskRefRequest):
+    return await _run_project_tool(
+        project_id, build_paper_reader_tool, {"paper_id": paper_id},
+        task_id=body.task_id, paper_id=paper_id,
     )
 
 
 @router.post("/v1/projects/{project_id}/paper-search", response_model=ToolResult)
 async def search_project_papers(project_id: str, body: PaperSearchRequest):
-    repo = await _research_repo()
-    await _get_project_or_404(repo, project_id)
-    router = ToolRouter([build_paper_search_tool(repo)])
-    return await execute_tool_with_trace(
-        repo,
-        router,
-        task_id=body.task_id or project_id,
-        project_id=project_id,
-        tool_name="paper_search",
-        arguments={"project_id": project_id, "query": body.query, "limit": body.limit},
+    return await _run_project_tool(
+        project_id, build_paper_search_tool,
+        {"query": body.query, "limit": body.limit}, task_id=body.task_id,
     )
 
 
+# --- claims & evidence ---------------------------------------------------
+
+
 @router.post(
-    "/v1/projects/{project_id}/papers/{paper_id}/claim-extract",
-    response_model=ToolResult,
+    "/v1/projects/{project_id}/papers/{paper_id}/claim-extract", response_model=ToolResult
 )
-async def extract_paper_claims(project_id: str, paper_id: str, body: ClaimExtractRequest):
-    repo = await _research_repo()
-    await _get_paper_or_404(repo, project_id, paper_id)
-    tool_router = ToolRouter([build_claim_extract_tool(repo)])
-    return await execute_tool_with_trace(
-        repo,
-        tool_router,
-        task_id=body.task_id or project_id,
-        project_id=project_id,
-        tool_name="claim_extract",
-        arguments={"project_id": project_id, "paper_id": paper_id},
+async def extract_paper_claims(project_id: str, paper_id: str, body: TaskRefRequest):
+    return await _run_project_tool(
+        project_id, build_claim_extract_tool, {"paper_id": paper_id},
+        task_id=body.task_id, paper_id=paper_id,
     )
 
 
@@ -306,17 +327,13 @@ async def audit_project_evidence(project_id: str):
 
 @router.post("/v1/projects/{project_id}/citation-graph", response_model=ToolResult)
 async def build_project_citation_graph(project_id: str, body: CitationGraphRequest):
-    repo = await _research_repo()
-    await _get_project_or_404(repo, project_id)
-    tool_router = ToolRouter([build_citation_graph_tool(repo)])
-    return await execute_tool_with_trace(
-        repo,
-        tool_router,
-        task_id=body.task_id or project_id,
-        project_id=project_id,
-        tool_name="citation_graph",
-        arguments={"project_id": project_id, "paper_id": body.paper_id, "limit": body.limit},
+    return await _run_project_tool(
+        project_id, build_citation_graph_tool,
+        {"paper_id": body.paper_id, "limit": body.limit}, task_id=body.task_id,
     )
+
+
+# --- paper matrix --------------------------------------------------------
 
 
 @router.get("/v1/projects/{project_id}/paper-matrix", response_model=PaperMatrix)
@@ -338,6 +355,9 @@ async def export_paper_matrix_csv(project_id: str):
     )
 
 
+# --- trace ---------------------------------------------------------------
+
+
 @router.get("/v1/projects/{project_id}/trace", response_model=list[ToolTraceItem])
 async def get_project_trace(project_id: str):
     repo = await _research_repo()
@@ -351,7 +371,7 @@ async def get_research_trace(task_id: str):
     return await get_tool_trace(repo, task_id)
 
 
-# --- review checkpoints -------------------------------------------------
+# --- review checkpoints --------------------------------------------------
 # A POST decision both persists the verdict and wakes any run blocked in
 # CheckpointService.wait(), so the human-in-the-loop is real, not cosmetic.
 
@@ -393,3 +413,76 @@ async def request_review_changes(checkpoint_id: str, body: ReviewDecisionRequest
 @router.post("/v1/research/reviews/{checkpoint_id}/reject", response_model=ReviewCheckpoint)
 async def reject_review(checkpoint_id: str, body: ReviewDecisionRequest):
     return await _resolve_review(checkpoint_id, ReviewDecision.rejected, body.comment)
+
+
+# --- Phase 5: taxonomy ---------------------------------------------------
+
+
+@router.get("/v1/projects/{project_id}/taxonomy", response_model=MethodTaxonomy)
+async def get_project_taxonomy(project_id: str):
+    repo = await _research_repo()
+    await _get_project_or_404(repo, project_id)
+    taxonomy = await repo.latest_project_taxonomy(project_id)
+    if taxonomy is None:
+        raise HTTPException(404, "no taxonomy has been built for this project")
+    return taxonomy
+
+
+@router.post("/v1/projects/{project_id}/taxonomy/build", response_model=ToolResult)
+async def build_project_taxonomy(project_id: str, body: TaskRefRequest):
+    return await _run_project_tool(project_id, build_taxonomy_tool, task_id=body.task_id)
+
+
+# --- Phase 5: baselines --------------------------------------------------
+
+
+@router.get("/v1/projects/{project_id}/baselines", response_model=list[BaselineCandidate])
+async def list_project_baselines(project_id: str):
+    repo = await _research_repo()
+    await _get_project_or_404(repo, project_id)
+    return await repo.list_project_baselines(project_id)
+
+
+@router.post("/v1/projects/{project_id}/baselines", response_model=BaselineCandidate)
+async def create_baseline(project_id: str, body: CreateBaselineRequest):
+    repo = await _research_repo()
+    await _get_project_or_404(repo, project_id)
+    baseline = BaselineCandidate(project_id=project_id, **body.model_dump(mode="json"))
+    await repo.create_baseline(baseline)
+    return baseline
+
+
+@router.post("/v1/projects/{project_id}/baselines/extract", response_model=ToolResult)
+async def extract_project_baselines(project_id: str, body: TaskRefRequest):
+    return await _run_project_tool(project_id, build_baseline_extract_tool, task_id=body.task_id)
+
+
+@router.post("/v1/projects/{project_id}/baselines/rank", response_model=ToolResult)
+async def rank_project_baselines(project_id: str, body: BaselineRankRequest):
+    return await _run_project_tool(
+        project_id, build_baseline_rank_tool, {"goal": body.goal}, task_id=body.task_id,
+    )
+
+
+# --- Phase 5: ideas ------------------------------------------------------
+
+
+@router.get("/v1/projects/{project_id}/ideas", response_model=list[ResearchIdea])
+async def list_project_ideas(project_id: str):
+    repo = await _research_repo()
+    await _get_project_or_404(repo, project_id)
+    return await repo.list_project_ideas(project_id)
+
+
+@router.post("/v1/projects/{project_id}/ideas", response_model=ResearchIdea)
+async def create_idea(project_id: str, body: CreateIdeaRequest):
+    repo = await _research_repo()
+    await _get_project_or_404(repo, project_id)
+    idea = ResearchIdea(project_id=project_id, **body.model_dump())
+    await repo.create_idea(idea)
+    return idea
+
+
+@router.post("/v1/projects/{project_id}/ideas/rank", response_model=ToolResult)
+async def rank_project_ideas(project_id: str, body: TaskRefRequest):
+    return await _run_project_tool(project_id, build_idea_rank_tool, task_id=body.task_id)

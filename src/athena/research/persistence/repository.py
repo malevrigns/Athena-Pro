@@ -11,11 +11,14 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from athena.research.domain import (
+    BaselineCandidate,
     Claim,
     Evidence,
+    MethodTaxonomy,
     Paper,
     PaperNote,
     PaperScreeningStatus,
+    ResearchIdea,
     ResearchProject,
     ReviewCheckpoint,
 )
@@ -166,3 +169,47 @@ class ResearchRepository(ABC):
     @abstractmethod
     async def list_research_events(self, task_id: str) -> list[dict]:
         """Return persisted event payloads for a task ordered by sequence."""
+
+    @abstractmethod
+    async def create_taxonomy(self, taxonomy: MethodTaxonomy) -> None:
+        """Insert a method taxonomy snapshot for a project."""
+
+    @abstractmethod
+    async def get_taxonomy(self, taxonomy_id: str) -> MethodTaxonomy | None:
+        """Return a taxonomy snapshot, or None if it does not exist."""
+
+    @abstractmethod
+    async def latest_project_taxonomy(self, project_id: str) -> MethodTaxonomy | None:
+        """Return the most recent taxonomy snapshot for a project."""
+
+    @abstractmethod
+    async def create_baseline(self, baseline: BaselineCandidate) -> None:
+        """Insert a new baseline candidate."""
+
+    @abstractmethod
+    async def upsert_baseline(self, baseline: BaselineCandidate) -> None:
+        """Insert the baseline, or update it in place if its id already exists."""
+
+    @abstractmethod
+    async def get_baseline(self, baseline_id: str) -> BaselineCandidate | None:
+        """Return a baseline candidate, or None if it does not exist."""
+
+    @abstractmethod
+    async def list_project_baselines(self, project_id: str) -> list[BaselineCandidate]:
+        """Return baseline candidates for a project ordered by creation time."""
+
+    @abstractmethod
+    async def create_idea(self, idea: ResearchIdea) -> None:
+        """Insert a new research idea."""
+
+    @abstractmethod
+    async def upsert_idea(self, idea: ResearchIdea) -> None:
+        """Insert the idea, or update it in place if its id already exists."""
+
+    @abstractmethod
+    async def get_idea(self, idea_id: str) -> ResearchIdea | None:
+        """Return a research idea, or None if it does not exist."""
+
+    @abstractmethod
+    async def list_project_ideas(self, project_id: str) -> list[ResearchIdea]:
+        """Return research ideas for a project ordered by creation time."""
