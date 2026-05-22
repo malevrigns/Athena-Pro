@@ -8,8 +8,18 @@ from pydantic import BaseModel, Field, HttpUrl
 
 from athena.persistence import get_store
 from athena.research.artifacts import PaperMatrix, build_paper_matrix, paper_matrix_to_csv
-from athena.research.domain import Claim, Evidence, Paper, PaperNote, PaperScreeningStatus, ResearchProject
+from athena.research.domain import (
+    Claim,
+    Evidence,
+    Paper,
+    PaperNote,
+    PaperScreeningStatus,
+    ResearchProject,
+    ReviewCheckpoint,
+    ReviewDecision,
+)
 from athena.research.persistence import ResearchRepository
+from athena.research.runtime import CheckpointService
 from athena.research.services import check_evidence_completeness
 from athena.research.services import create_paper as create_research_paper
 from athena.research.services import create_paper_note as create_research_paper_note
@@ -86,6 +96,10 @@ class CitationGraphRequest(BaseModel):
     paper_id: str | None = None
     limit: int = Field(default=10, ge=1, le=50)
     task_id: str | None = None
+
+
+class ReviewDecisionRequest(BaseModel):
+    comment: str | None = Field(default=None, max_length=4000)
 
 
 async def _research_repo():
@@ -335,3 +349,47 @@ async def get_project_trace(project_id: str):
 async def get_research_trace(task_id: str):
     repo = await _research_repo()
     return await get_tool_trace(repo, task_id)
+
+
+# --- review checkpoints -------------------------------------------------
+# A POST decision both persists the verdict and wakes any run blocked in
+# CheckpointService.wait(), so the human-in-the-loop is real, not cosmetic.
+
+
+@router.get("/v1/projects/{project_id}/reviews", response_model=list[ReviewCheckpoint])
+async def list_project_reviews(project_id: str):
+    repo = await _research_repo()
+    await _get_project_or_404(repo, project_id)
+    return await CheckpointService(repo).list_for_project(project_id)
+
+
+@router.get("/v1/research/reviews/{checkpoint_id}", response_model=ReviewCheckpoint)
+async def get_review_checkpoint(checkpoint_id: str):
+    repo = await _research_repo()
+    checkpoint = await CheckpointService(repo).get(checkpoint_id)
+    if checkpoint is None:
+        raise HTTPException(404, "review checkpoint not found")
+    return checkpoint
+
+
+async def _resolve_review(checkpoint_id: str, decision: ReviewDecision, comment: str | None):
+    repo = await _research_repo()
+    try:
+        return await CheckpointService(repo).resolve(checkpoint_id, decision, comment=comment)
+    except KeyError as exc:
+        raise HTTPException(404, "review checkpoint not found") from exc
+
+
+@router.post("/v1/research/reviews/{checkpoint_id}/approve", response_model=ReviewCheckpoint)
+async def approve_review(checkpoint_id: str, body: ReviewDecisionRequest):
+    return await _resolve_review(checkpoint_id, ReviewDecision.approved, body.comment)
+
+
+@router.post("/v1/research/reviews/{checkpoint_id}/request-changes", response_model=ReviewCheckpoint)
+async def request_review_changes(checkpoint_id: str, body: ReviewDecisionRequest):
+    return await _resolve_review(checkpoint_id, ReviewDecision.changes_requested, body.comment)
+
+
+@router.post("/v1/research/reviews/{checkpoint_id}/reject", response_model=ReviewCheckpoint)
+async def reject_review(checkpoint_id: str, body: ReviewDecisionRequest):
+    return await _resolve_review(checkpoint_id, ReviewDecision.rejected, body.comment)

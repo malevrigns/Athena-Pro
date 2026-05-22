@@ -28,13 +28,20 @@ from athena.research.tools import utcnow
 
 from .loop import ApprovalAsk, ApprovalHandler
 
+# Process-wide registry of live wake-up events, keyed by checkpoint id. It is
+# shared by every CheckpointService instance so that an HTTP request handling
+# a review decision can wake a session blocked in `wait()` — they are separate
+# CheckpointService instances but the same process. Single-process / single-
+# user, so a module-level dict is enough (same pattern as athena.hitl).
+_EVENTS: dict[str, asyncio.Event] = {}
+
 
 class CheckpointService:
     """Creates, blocks on, and resolves durable review checkpoints."""
 
     def __init__(self, repository: ResearchRepository) -> None:
         self._repository = repository
-        self._events: dict[str, asyncio.Event] = {}
+        self._events: dict[str, asyncio.Event] = _EVENTS
 
     async def open(
         self,

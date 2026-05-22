@@ -557,3 +557,122 @@ async def test_project_trace_api_returns_project_scoped_trace(
     payload = response.json()
     assert [item["call"]["tool_name"] for item in payload] == ["paper_search"]
     assert payload[0]["observations"][0]["summary"] == "found papers"
+
+
+@pytest.mark.asyncio
+async def test_review_endpoints_list_get_and_approve(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    _configure_env(monkeypatch, tmp_path)
+
+    from athena.api.main import create_app
+    from athena.persistence import get_store
+    from athena.research.domain import CheckpointType
+    from athena.research.runtime import CheckpointService
+
+    app = create_app()
+    async with app.router.lifespan_context(app):
+        repo = await get_store().research_repository()
+        from athena.research.domain import ResearchProject
+
+        project = ResearchProject(title="RAG", research_question="Approve what?")
+        await repo.create_project(project)
+        checkpoint = await CheckpointService(repo).open(
+            task_id="task_1",
+            project_id=project.id,
+            checkpoint_type=CheckpointType.plan_review,
+            title="Approve the plan",
+            content={"steps": ["search", "read"]},
+        )
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            listed = await client.get(f"/v1/projects/{project.id}/reviews")
+            assert listed.status_code == 200
+            assert [r["id"] for r in listed.json()] == [checkpoint.id]
+            assert listed.json()[0]["status"] == "pending"
+
+            fetched = await client.get(f"/v1/research/reviews/{checkpoint.id}")
+            assert fetched.status_code == 200
+            assert fetched.json()["title"] == "Approve the plan"
+
+            approved = await client.post(
+                f"/v1/research/reviews/{checkpoint.id}/approve",
+                json={"comment": "looks good"},
+            )
+            assert approved.status_code == 200
+            assert approved.json()["status"] == "decided"
+            assert approved.json()["decision"] == "approved"
+            assert approved.json()["comment"] == "looks good"
+
+            missing = await client.get("/v1/research/reviews/ckpt_missing")
+            assert missing.status_code == 404
+            bad_reject = await client.post("/v1/research/reviews/ckpt_missing/reject", json={})
+            assert bad_reject.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_review_api_wakes_a_session_blocked_on_plan_review(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    """The decisive integration test: a POST decision unblocks a live run."""
+    _configure_env(monkeypatch, tmp_path)
+
+    import asyncio
+
+    from athena.api.main import create_app
+    from athena.persistence import get_store
+    from athena.research.domain import ResearchProject
+    from athena.research.runtime import AgentStep, ResearchSession, ScriptedBrain
+    from athena.research.tools import PermissionLevel, ToolResult, ToolRouter, ToolSpec
+
+    async def _handler(arguments: dict) -> ToolResult:
+        return ToolResult(ok=True, summary="ok")
+
+    app = create_app()
+    async with app.router.lifespan_context(app):
+        repo = await get_store().research_repository()
+        project = ResearchProject(title="RAG", research_question="Run me?")
+        await repo.create_project(project)
+        router = ToolRouter(
+            [
+                ToolSpec(
+                    name="paper_search",
+                    description="search",
+                    parameters_schema={"type": "object"},
+                    handler=_handler,
+                    permission_level=PermissionLevel.network_read,
+                )
+            ]
+        )
+        session = ResearchSession(repository=repo, router=router, project=project)
+        brain = ScriptedBrain(steps=[AgentStep(kind="final", final_answer="done")])
+
+        run_task = asyncio.create_task(
+            session.run(brain=brain, goal="survey", plan={"steps": ["x"]}, require_plan_review=True)
+        )
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            checkpoint_id = None
+            for _ in range(200):
+                reviews = (await client.get(f"/v1/projects/{project.id}/reviews")).json()
+                pending = [r for r in reviews if r["status"] == "pending"]
+                if pending:
+                    checkpoint_id = pending[0]["id"]
+                    break
+                await asyncio.sleep(0.01)
+            assert checkpoint_id is not None, "session never opened a plan-review checkpoint"
+            assert not run_task.done()  # the run is genuinely blocked
+
+            approved = await client.post(
+                f"/v1/research/reviews/{checkpoint_id}/approve", json={}
+            )
+            assert approved.status_code == 200
+
+        result = await asyncio.wait_for(run_task, timeout=3)
+        assert result.started is True
+        assert result.plan_review.decision == "approved"
+        assert result.loop_result is not None
