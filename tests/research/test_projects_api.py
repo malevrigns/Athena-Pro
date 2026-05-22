@@ -762,3 +762,35 @@ async def test_taxonomy_endpoint_404_before_any_build(
             ).json()
             response = await client.get(f"/v1/projects/{project['id']}/taxonomy")
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_run_project_drives_a_research_session(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    """POST /runs orchestrates a project through the agent runtime."""
+    _configure_env(monkeypatch, tmp_path)
+
+    from athena.api.main import create_app
+
+    app = create_app()
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            project = (
+                await client.post(
+                    "/v1/projects",
+                    json={"title": "RAG", "research_question": "Survey RAG baselines"},
+                )
+            ).json()
+
+            run = await client.post(
+                f"/v1/projects/{project['id']}/runs",
+                json={"goal": "survey RAG", "max_iterations": 4},
+            )
+            assert run.status_code == 200
+            result = run.json()
+            assert result["project_id"] == project["id"]
+            assert result["started"] is True
+            assert result["loop_result"]["outcome"] == "completed"

@@ -8,6 +8,7 @@ import aiosqlite
 from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, Field, HttpUrl
 
+from athena.llm_factory import get_llm
 from athena.persistence import get_store
 from athena.research.artifacts import PaperMatrix, build_paper_matrix, paper_matrix_to_csv
 from athena.research.domain import (
@@ -24,7 +25,13 @@ from athena.research.domain import (
     ReviewDecision,
 )
 from athena.research.persistence import ResearchRepository
-from athena.research.runtime import CheckpointService
+from athena.research.runtime import (
+    CheckpointService,
+    LLMAgentBrain,
+    LoopLimits,
+    ResearchSession,
+    SessionResult,
+)
 from athena.research.services import check_evidence_completeness
 from athena.research.services import create_paper as create_research_paper
 from athena.research.services import create_paper_note as create_research_paper_note
@@ -40,6 +47,7 @@ from athena.research.tools.evidence_tools import build_claim_extract_tool
 from athena.research.tools.idea_tools import build_idea_rank_tool
 from athena.research.tools.paper_reader import build_paper_reader_tool
 from athena.research.tools.paper_search import build_paper_search_tool
+from athena.research.tools.registry import build_research_tool_router
 from athena.research.tools.taxonomy_tools import build_taxonomy_tool
 
 router = APIRouter(tags=["research-os"])
@@ -141,6 +149,12 @@ class TaskRefRequest(BaseModel):
     task_id: str | None = None
 
 
+class RunProjectRequest(BaseModel):
+    goal: str | None = Field(default=None, max_length=3000)
+    max_iterations: int = Field(default=12, ge=1, le=50)
+    task_id: str | None = None
+
+
 class ReviewDecisionRequest(BaseModel):
     comment: str | None = Field(default=None, max_length=4000)
 
@@ -218,6 +232,29 @@ async def list_projects(limit: int = Query(50, ge=1, le=200)):
 async def get_project(project_id: str):
     repo = await _research_repo()
     return await _get_project_or_404(repo, project_id)
+
+
+@router.post("/v1/projects/{project_id}/runs", response_model=SessionResult)
+async def run_project(project_id: str, body: RunProjectRequest):
+    """Run the project through the Research OS agent runtime.
+
+    This is the orchestration seam: a ResearchSession drives an LLM-backed
+    AgentLoop over the full research toolset, instead of a fixed pipeline. The
+    legacy `/api/tasks` SSE graph stays untouched as documented legacy compat.
+    """
+    repo = await _research_repo()
+    project = await _get_project_or_404(repo, project_id)
+    session = ResearchSession(
+        repository=repo,
+        router=build_research_tool_router(repo),
+        project=project,
+        limits=LoopLimits(max_iterations=body.max_iterations),
+        task_id=body.task_id,
+    )
+    return await session.run(
+        brain=LLMAgentBrain(get_llm("researcher")),
+        goal=body.goal or project.research_question,
+    )
 
 
 # --- papers --------------------------------------------------------------
